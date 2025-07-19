@@ -17,13 +17,44 @@ export function FileUpload({ onFilesSelected, processing }: FileUploadProps) {
   const addFiles = useCallback((filesToAdd: File[]) => {
       setError(null);
       if (filesToAdd.length === 0) return;
+
+      const allAcceptedExtensions = Object.values(ACCEPTED_FILE_TYPES).flat();
+      const allAcceptedMimeTypes = Object.keys(ACCEPTED_FILE_TYPES);
+
+      const validFiles: File[] = [];
+      const rejectedFileMessages: string[] = [];
+
+      for (const file of filesToAdd) {
+          const fileName = file.name.toLowerCase();
+          const lastDotIndex = fileName.lastIndexOf('.');
+          const extensionWithDot = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
+
+          const isMimeTypeValid = allAcceptedMimeTypes.includes(file.type);
+          const isExtensionValid = allAcceptedExtensions.includes(extensionWithDot);
+          const isSizeValid = file.size <= MAX_FILE_SIZE_BYTES;
+
+          if (!isSizeValid) {
+            rejectedFileMessages.push(`${file.name} (exceeds ${MAX_FILE_SIZE_MB}MB)`);
+          } else if (isMimeTypeValid || isExtensionValid) {
+            validFiles.push(file);
+          } else {
+            rejectedFileMessages.push(file.name);
+          }
+      }
+
+      if (rejectedFileMessages.length > 0) {
+        const acceptedTypes = allAcceptedExtensions.join(', ');
+        setError(`File type not supported: ${rejectedFileMessages.join(', ')}. Accepted types: ${acceptedTypes}`);
+      }
+
+      if (validFiles.length === 0) return;
       
       setSelectedFiles(currentFiles => {
           const newFiles = [...currentFiles];
           const addedFileKeys = new Set(currentFiles.map(f => `${f.name}-${f.size}`));
           let addedCount = 0;
 
-          for (const file of filesToAdd) {
+          for (const file of validFiles) {
               const fileKey = `${file.name}-${file.size}`;
               if (!addedFileKeys.has(fileKey)) {
                   newFiles.push(file);

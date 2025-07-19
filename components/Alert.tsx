@@ -1,5 +1,5 @@
 import React from 'react';
-import { InfoIcon } from './icons';
+import { InfoIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon } from './icons';
 
 interface AlertProps {
   type: 'error' | 'success' | 'info' | 'warning';
@@ -11,39 +11,41 @@ interface AlertProps {
 export function Alert({ type, title, message, onClose }: AlertProps) {
   const baseClasses = "border-l-4 p-4 my-4 rounded-md shadow-md";
   
-  // More robust type styling to avoid fragile string splitting
-  const typeStyles = {
+  const typeConfig = {
     error: {
       container: "bg-red-50 border-red-500 text-red-700",
-      icon: "text-red-700",
+      icon: XCircleIcon,
+      iconClass: "text-red-700",
     },
     success: {
       container: "bg-green-50 border-green-500 text-green-700",
-      icon: "text-blue-700",
+      icon: CheckCircleIcon,
+      iconClass: "text-green-700",
     },
     info: {
       container: "bg-blue-50 border-blue-500 text-blue-700",
-      icon: "text-blue-700",
+      icon: InfoIcon,
+      iconClass: "text-blue-700",
     },
     warning: {
       container: "bg-yellow-50 border-yellow-500 text-yellow-700",
-      icon: "text-yellow-700",
+      icon: ExclamationTriangleIcon,
+      iconClass: "text-yellow-700",
     },
   };
 
-  const IconComponent = InfoIcon;
+  const IconComponent = typeConfig[type].icon;
 
   return (
-    <div className={`${baseClasses} ${typeStyles[type].container}`} role="alert">
+    <div className={`${baseClasses} ${typeConfig[type].container}`} role="alert">
       <div className="flex">
         <div className="py-1">
-          <IconComponent className={`h-6 w-6 ${typeStyles[type].icon} mr-3`} />
+          <IconComponent className={`h-6 w-6 ${typeConfig[type].iconClass} mr-3`} />
         </div>
         <div className="flex-grow">
           {title && <p className="font-bold">{title}</p>}
           <div className="text-sm whitespace-pre-wrap break-words">
-            {/* Hardening: Ensure message is a string to prevent render crashes */}
-            {typeof message === 'string' ? message : 'An unexpected error object was provided. Please check the console.'}
+            {message}
           </div>
         </div>
         {onClose && (

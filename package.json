@@ -9,15 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-dom/client": "18.3.1",
+    "react": "^19.1.0",
+    "react/jsx-runtime": "18.2.0",
+    "react-dom/client": "18.2.0",
     "pdfjs-dist": "4.4.168",
     "mammoth": "1.8.0",
     "@google/genai": "1.6.0",
-    "react-markdown": "9.0.1",
-    "remark-gfm": "4.0.0",
-    "remark-slug": "7.0.0"
+    "react-markdown": "8.0.7",
+    "remark-gfm": "3.0.1",
+    "remark-slug": "7.0.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

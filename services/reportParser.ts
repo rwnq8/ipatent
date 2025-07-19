@@ -44,6 +44,8 @@ export const parseReportForPriorArt = (markdownContent: string): Omit<KnowledgeB
       type: isProvisional ? 'provisional' : 'non-provisional',
       files: [{ name: "Extracted from Report", content: contentBlock }],
       extractedClaims: [],
+      extractedEmbodiments: [],
+      isComplete: true, // Assumed complete as it's from the analysis context
       notes: `Extracted automatically from analysis report. Status: ${status}. URL: ${url}`,
       priorityTo: undefined,
     };

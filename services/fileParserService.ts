@@ -1,16 +1,5 @@
 import { ProcessedFile, FileProcessingResult } from '../types';
-// Note: mammoth and pdfjs-dist would typically be npm dependencies.
-// For this environment, we assume they can be imported.
-// If using script tags for these, ensure they are loaded before this script.
 import mammoth from 'mammoth'; 
-// Import specific ESM components to ensure correct module resolution
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/build/pdf.mjs';
-
-// Set workerSrc for pdfjs-dist. This is crucial for it to work.
-if (typeof GlobalWorkerOptions !== 'undefined') {
-    GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs`;
-}
-
 
 export const parseFileContent = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -33,16 +22,28 @@ export const parseFileContent = async (file: File): Promise<string> => {
           const result = await mammoth.extractRawText({ arrayBuffer });
           resolve(result.value);
         } else if (mimeType === 'application/pdf' || extensionWithDot === '.pdf') {
-          const arrayBuffer = event.target.result as ArrayBuffer;
-          const pdf = await getDocument({ data: arrayBuffer }).promise;
-          let textContent = '';
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textData = await page.getTextContent();
-            // Ensure items exist and map safely
-            textContent += textData.items?.map((item: { str: string }) => item.str).join(' ') + '\n';
-          }
-          resolve(textContent);
+            try {
+                // Dynamically import pdfjs-dist only when a PDF is processed
+                const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/build/pdf.mjs');
+                
+                // Set worker source right after successful import
+                GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.mjs`;
+
+                const arrayBuffer = event.target.result as ArrayBuffer;
+                const pdf = await getDocument({ data: arrayBuffer }).promise;
+                let textContent = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textData = await page.getTextContent();
+                    textContent += textData.items?.map((item: any) => item.str).join(' ') + '\n';
+                }
+                resolve(textContent);
+
+            } catch(e) {
+                // This catch block handles failures in dynamically importing or using the PDF library
+                console.error("Failed to load or process PDF library:", e);
+                reject(new Error("Failed to load the required PDF parsing library. Please check your network connection and try again. This document could not be processed."));
+            }
         } else if (mimeType === 'text/plain' || mimeType === 'text/markdown' || extensionWithDot === '.txt' || extensionWithDot === '.md') { // .txt, .md
            resolve(event.target.result as string);
         } else {
