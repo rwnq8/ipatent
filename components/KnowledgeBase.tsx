@@ -1,5 +1,8 @@
 
 
+
+
+
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { KnowledgeBaseEntry } from '../types';
 import { TrashIcon, FileTextIcon, DownloadIcon, UploadIcon, PinIcon, PencilIcon, ExclamationTriangleIcon } from './icons';
@@ -38,6 +41,16 @@ function EntryDisplay({ entry, onRemoveEntry, onEditEntry, onPinEntry, disabled,
   const embodiments = entry.extractedEmbodiments || [];
   const titleColor = isPinnedIdea ? 'text-cyan-700' : (entry.isOwner ? "text-indigo-700" : "text-slate-700");
 
+  const handleRemoveClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const message = isPinnedIdea 
+      ? `Are you sure you want to remove the pinned idea "${entry.title}"?`
+      : `Are you sure you want to remove the portfolio entry "${entry.title}"? This will also remove any entries that claim priority to it.`;
+    if (window.confirm(message)) {
+      onRemoveEntry(entry.id);
+    }
+  };
+
   return (
     <details className={`p-4 rounded-lg shadow-sm border ${level > 0 ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`} open={!entry.isOwner && !isPinnedIdea}>
       <summary className="font-medium text-slate-800 cursor-pointer flex justify-between items-center gap-2">
@@ -58,7 +71,7 @@ function EntryDisplay({ entry, onRemoveEntry, onEditEntry, onPinEntry, disabled,
                   <PencilIcon className="w-5 h-5"/>
               </button>
               <button
-                onClick={(e) => { e.preventDefault(); onRemoveEntry(entry.id); }}
+                onClick={handleRemoveClick}
                 disabled={disabled}
                 className="p-1 text-red-500 hover:text-red-700 disabled:text-slate-400"
                 aria-label={`Remove ${entry.title}`}

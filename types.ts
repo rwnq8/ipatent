@@ -2,6 +2,8 @@
 
 
 
+
+
 export interface ProcessedFile {
   id: string;
   name: string;
@@ -152,6 +154,7 @@ export type Action =
   | { type: 'GENERATE_APP_START' }
   | { type: 'GENERATE_APP_SUCCESS'; payload: PatentApplication }
   | { type: 'START_NEW_ANALYSIS' }
+  | { type: 'START_NEW_DRAFT' }
   | { type: 'REMOVE_KB_ENTRY'; payload: string }
   | { type: 'IMPORT_KB_SUCCESS'; payload: KnowledgeBaseUpdateResult }
   | { type: 'INITIALIZE_KB'; payload: KnowledgeBaseEntry[] }

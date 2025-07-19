@@ -1,6 +1,7 @@
 
 
 
+
 import React from 'react';
 import { FileUpload } from './components/FileUpload';
 import { PatentApplicationDisplay } from './components/PatentApplicationDisplay';
@@ -16,6 +17,15 @@ const IS_API_KEY_CONFIGURED = !!process.env.API_KEY;
 
 export function App() {
   const manager = useAppManager();
+
+  const handleCancelGeneration = () => {
+    // This handler resets the state, allowing the user to exit a long-running process.
+    if(manager.status === 'generatingApplication') {
+        manager.startNewDraft();
+    } else {
+        manager.startNewAnalysis();
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 px-4 sm:px-6 lg:px-8">
@@ -65,7 +75,12 @@ export function App() {
           disabled={manager.isLoading}
         />
 
-        {manager.isLoading && <Spinner message={manager.loadingMessage} />}
+        {manager.isLoading && (
+            <Spinner
+                message={manager.loadingMessage}
+                onCancel={['generatingReport', 'generatingApplication'].includes(manager.status) ? handleCancelGeneration : undefined}
+            />
+        )}
         
         {manager.status === 'inventionsReadyForSelection' && manager.extractedInventions && (
           <InventionSelection
@@ -90,7 +105,7 @@ export function App() {
            <PatentApplicationDisplay 
               application={manager.patentApplication} 
               inventionTitle={manager.selectedInvention?.title}
-              onGenerateNew={manager.startNewAnalysis}
+              onGenerateNew={manager.startNewDraft}
               isGenerating={manager.isLoading}
             />
         )}

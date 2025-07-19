@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ExtractedInvention } from '../types';
 
@@ -26,10 +27,9 @@ export function InventionSelection({
     }
 
     const handleSelect = (invention: ExtractedInvention) => {
-        // Allow deselecting by clicking the same invention again, which cancels the automated flow.
-        if (selectedInvention === invention) {
-            onSelectInvention(null); 
-        } else {
+        // Selection is now a one-way action. The user can cancel the flow
+        // using the global cancel button that appears on the spinner.
+        if (!disabled) {
             onSelectInvention(invention);
         }
     };
@@ -45,7 +45,7 @@ export function InventionSelection({
                 {inventions.map((invention, invIndex) => {
                     const isSelected = selectedInvention === invention;
                     return (
-                        <div key={invIndex} className={`border rounded-lg p-4 transition-all duration-200 ${isSelected ? 'border-blue-500 ring-2 ring-blue-200 shadow-md' : 'border-slate-200 hover:shadow-md'}`}>
+                        <div key={invIndex} className={`border rounded-lg p-4 transition-all duration-200 ${isSelected && disabled ? 'border-blue-500 ring-2 ring-blue-200 shadow-md' : 'border-slate-200 hover:shadow-md'}`}>
                             <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                                 <div className="flex-grow">
                                     <h3 className="text-lg font-bold text-slate-800">{invention.title}</h3>
@@ -56,7 +56,7 @@ export function InventionSelection({
                                         onClick={() => handleSelect(invention)}
                                         disabled={disabled}
                                         className={`w-full md:w-auto px-6 py-2 border text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
-                                            isSelected && disabled // Show "Selected" only when it's selected AND processing has started
+                                            isSelected && disabled
                                             ? 'bg-green-600 text-white border-transparent cursor-default' 
                                             : 'bg-blue-600 text-white border-transparent hover:bg-blue-700 focus:ring-blue-500'
                                         } disabled:bg-slate-400 disabled:cursor-not-allowed`}

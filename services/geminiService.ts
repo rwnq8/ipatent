@@ -1,6 +1,4 @@
 
-
-
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { GEMINI_MODEL_TEXT } from '../constants';
 import { ProcessedFile, PatentApplication, KnowledgeBaseEntry, SuggestedPortfolioEntry, ExtractedInvention, GeneratedFigure, PatentAnalysisReport } from "../types";
@@ -73,11 +71,15 @@ export const extractPortfolioEntriesFromBatch = async (processedFiles: Processed
       `--- DOCUMENT: ${file.name} ---\n${sanitizeForApi(file.content).substring(0, 80000)}` // Sanitize and then truncate
     ).join('\n\n');
 
-    const prompt = `You are an intelligent patent docketing assistant working within a complete, self-contained patent engine. Your primary function is to analyze documents to build a comprehensive knowledge base for patent prosecution. Analyze the following batch of documents. Each document is separated by "--- DOCUMENT: [filename] ---".
+    const systemInstruction = `You are an intelligent patent docketing assistant working within a complete, self-contained patent engine. Your primary function is to analyze documents to build a comprehensive knowledge base for patent prosecution.
+Your entire response must be ONLY a single, valid JSON array of objects. Do not include any other text, explanations, or markdown fences.
+CRITICAL: All property keys in the JSON must be enclosed in double quotes (e.g., "title"). All string values must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.`;
+
+    const prompt = `Analyze the following batch of documents. Each document is separated by "--- DOCUMENT: [filename] ---".
 
 Your task is to identify all unique patent applications mentioned. Information for a single application might be spread across multiple files (e.g., an application number in a filing receipt and the title in the specification). You must correlate this information and merge it into a single, consolidated entry for each unique application.
 
-Return your findings as a single JSON array, where each object in the array represents one unique patent application and has the following structure:
+Each object in the returned JSON array represents one unique patent application and must have the following structure:
 - title: The title of the invention.
 - applicationNumber: The application or patent number. Standardize it if possible (e.g., US 12/345,678).
 - filingDate: The primary filing or priority date in YYYY-MM-DD format.
@@ -89,10 +91,6 @@ Return your findings as a single JSON array, where each object in the array repr
 
 If a document does not appear to be patent-related or is part of an already identified application, do not create a separate entry for it.
 If no patent-related documents are found at all, return an empty array [].
-
-Your entire response must be ONLY the JSON array. Do not include any other text, explanations, or markdown fences.
-
-CRITICAL: All string values within the JSON must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.
 
 --- BATCH OF DOCUMENTS ---
 ${fileContentBlock}
@@ -131,11 +129,13 @@ ${fileContentBlock}
       items: patentMetadataSchema
     };
 
+    let responseTextForError: string = '';
     try {
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: GEMINI_MODEL_TEXT,
             contents: prompt,
             config: {
+                systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema: batchResponseSchema,
                 temperature: 0.0,
@@ -143,6 +143,7 @@ ${fileContentBlock}
         });
 
         let jsonStr = response.text.trim();
+        responseTextForError = jsonStr;
 
         if (!jsonStr) {
             return [];
@@ -199,7 +200,8 @@ ${fileContentBlock}
     } catch (error) {
         console.error("Error calling Gemini API for batch metadata extraction:", error);
         const originalMessage = (error instanceof Error) ? error.message : String(error);
-        throw new Error(`Failed to parse patent metadata from documents. The AI may have returned a malformed response. Details: ${originalMessage}`);
+        const debugInfo = responseTextForError ? ` Raw model output snippet: ${responseTextForError.substring(0, 500)}...` : '';
+        throw new Error(`Failed to parse patent metadata from documents. The AI may have returned a malformed response. Details: ${originalMessage}.${debugInfo}`);
     }
 };
 
@@ -211,9 +213,11 @@ export const extractInventions = async (processedFiles: ProcessedFile[]): Promis
       `--- DOCUMENT: ${file.name} ---\n${sanitizeForApi(file.content).substring(0, 100000)}`
     ).join('\n\n');
 
-    const prompt = `You are an expert patent analyst. Your task is to dissect the provided documents to identify distinct inventions.
+    const systemInstruction = `You are an expert patent analyst. Your task is to dissect provided documents to identify distinct inventions.
+Return your findings as a single, valid JSON array of "invention" objects. The entire response MUST be ONLY this JSON array, with no other text, explanations, or markdown fences.
+CRITICAL: All property keys in the JSON must be enclosed in double quotes (e.g., "title"). All string values must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.`;
 
-Analyze the following batch of documents. Each document is separated by "--- DOCUMENT: [filename] ---". You MUST identify all unique inventions. If two documents describe completely different technologies (e.g., one about quantum security, one about machine learning resource allocation), they are two separate inventions.
+    const prompt = `Analyze the following batch of documents. Each document is separated by "--- DOCUMENT: [filename] ---". You MUST identify all unique inventions. If two documents describe completely different technologies (e.g., one about quantum security, one about machine learning resource allocation), they are two separate inventions.
 
 For each distinct invention you identify, you must:
 1.  Generate a concise title for the invention.
@@ -222,10 +226,6 @@ For each distinct invention you identify, you must:
     a.  **'explicit' claims:** These are formally numbered claims found verbatim in a "CLAIMS" section of the documents.
     b.  **'inferred' claims:** This is critical. Scour the entire text (abstract, summary, detailed description, embodiments) for sentences or phrases that describe a specific feature, function, component, process, or advantage that could be formulated into a formal claim later. Be exhaustive. This is about capturing every potentially patentable idea.
 4.  **CRITICAL:** List the exact filenames of all source documents that contributed information to this invention.
-
-Return your findings as a single JSON array of "invention" objects. The entire response must be ONLY this JSON array, with no other text, explanations, or markdown fences.
-
-CRITICAL: All string values within the JSON must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.
 
 --- BATCH OF DOCUMENTS ---
 ${fileContentBlock}
@@ -266,11 +266,13 @@ ${fileContentBlock}
       items: inventionSchema,
     };
 
+    let responseTextForError: string = '';
     try {
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: GEMINI_MODEL_TEXT,
             contents: prompt,
             config: {
+                systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema: responseSchema,
                 temperature: 0.1,
@@ -278,6 +280,8 @@ ${fileContentBlock}
         });
 
         let jsonStr = response.text.trim();
+        responseTextForError = jsonStr;
+
         if (jsonStr.startsWith("```json")) {
             jsonStr = jsonStr.substring(7);
             if (jsonStr.endsWith("```")) {
@@ -286,6 +290,11 @@ ${fileContentBlock}
         }
         jsonStr = jsonStr.trim();
         
+        if (!jsonStr) {
+            console.warn("Gemini API returned an empty response for invention extraction.");
+            return [];
+        }
+
         const parsedData = JSON.parse(jsonStr) as any[];
 
         if (!Array.isArray(parsedData)) {
@@ -319,7 +328,9 @@ ${fileContentBlock}
 
     } catch (error) {
         console.error("Error calling Gemini API for invention extraction:", error);
-        throw new Error(`Failed to extract inventions from documents: ${(error as Error).message}`);
+        const originalMessage = (error instanceof Error) ? error.message : String(error);
+        const debugInfo = responseTextForError ? ` Raw model output snippet: ${responseTextForError.substring(0, 500)}...` : '';
+        throw new Error(`Failed to extract inventions from documents. The AI may have returned a malformed response. Details: ${originalMessage}.${debugInfo}`);
     }
 };
 
@@ -421,7 +432,16 @@ Your entire output must be ONLY the markdown for Section 5 and the Appendices se
 - Draft a new, revised set of 3-5 claims that you believe represent the strongest, most defensible version of this invention based on the analysis in the context provided.
 
 ### B. Claim Chart vs. Closest Art
-- **CRITICAL:** Create a complete, detailed markdown table comparing your top revised independent claim against the single closest prior art reference identified in the context. Break the claim into its essential features for the comparison.
+- **CRITICAL:** Create a complete, detailed markdown table comparing your top revised independent claim (from part A above) against the single closest prior art reference identified in the context.
+- **ACTION:** You MUST use the following markdown table structure exactly. Populate every feature and analysis cell with specific, detailed information. Do not use placeholders, omit details, or use dotted lines.
+
+\`\`\`markdown
+| Feature of Revised Independent Claim 1 | Analysis vs. Closest Prior Art (Novelty / Inventive Step) |
+| :--- | :--- |
+| [Break down Claim 1 into its first essential feature or limitation here] | [Provide your detailed analysis for this feature against the prior art, explaining why it is novel or non-obvious] |
+| [Break down Claim 1 into its second essential feature or limitation here] | [Provide your detailed analysis for this feature against the prior art, explaining why it is novel or non-obvious] |
+| ... (continue for all essential features) | ... (continue analysis for each feature) |
+\`\`\`
 
 ### C. Strategic Go/No-Go Recommendation
 - Provide a final, clear recommendation (e.g., High Confidence GO, Cautious GO, NO-GO).
@@ -721,14 +741,14 @@ ${invention.sourceContent.substring(0, 150000)}
 ${report.markdownContent.substring(0, 150000)}
 `;
 
-  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **non-provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided.`;
+  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **non-provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided. **CRITICAL:** You MUST generate the full, complete text for the requested section. Do NOT use placeholder text such as "Placeholder for..." or "[Insert details here]". You must write the actual content.`;
   const contentSchema = { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ['content'] };
 
   // Generate all section content first
   const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. Be exhaustive and ensure full antecedent basis for all claim terms, describing multiple embodiments as per the playbook.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text. Do NOT use placeholders.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text. Do NOT use placeholders.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. Be exhaustive and ensure full antecedent basis for all claim terms, describing multiple embodiments as per the playbook. Do NOT use placeholders; write the full content.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   
   // Use a more focused prompt for the claims section
   const claimsPrompt = `Based on the provided context and the principles of the "Global Patent Playbook", generate ONLY the formal "CLAIMS" section for a non-provisional application.
@@ -788,74 +808,84 @@ ${report.markdownContent.substring(0, 150000)}
 };
 
 export const generateProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport, knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
-  if (!ai) throw new Error("Gemini API client is not initialized.");
-  if (!invention || !report) throw new Error("Invention and report data are required.");
+    if (!ai) throw new Error("Gemini API client is not initialized.");
+    if (!invention || !report) throw new Error("Invention and report data are required.");
 
-  const bestPracticesGuide = await getBestPracticesGuideContent();
-  const bestModeClaims = getBestModeClaimsFromReport(report);
-
-  const basePromptContext = `
+    const bestPracticesGuide = await getBestPracticesGuideContent();
+    
+    // The base context now includes the report, which is crucial for a high-quality narrative.
+    const basePromptContext = `
 **Source Invention Full Disclosure:**
-${invention.sourceContent.substring(0, 150000)}
+This is the primary source of truth. Your entire output must be derived from and expand upon the details within this section.
+\`\`\`
+${invention.sourceContent.substring(0, 200000)}
+\`\`\`
 
-**Analysis Report Summary & "Best Mode" Concepts to Emphasize:**
-${bestModeClaims}
-
-**Full Report for Additional Context:**
+**Analysis Report Summary & "Best Mode" Claims:**
+This report provides strategic context and a refined articulation of the invention's core concepts. Use it to guide the narrative, focus, and structure of the application draft.
+\`\`\`
 ${report.markdownContent.substring(0, 150000)}
+\`\`\`
 `;
 
-  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the seasoned patent agent from the guide. Your task is to generate ONE specific section of a **provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided.`;
-  const contentSchema = { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ['content'] };
+    // A more sophisticated system instruction for provisional drafting.
+    const provisionalSystemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **provisional patent application**. Your primary goal is to create a rich, detailed, and comprehensive technical disclosure to establish the strongest possible priority date.
 
-  // Generate all section content first
-  const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. This is a provisional, so adopt a "kitchen sink" approach as described in the playbook. Be exhaustive. Describe every component, function, step, and all possible alternative embodiments from the source material to provide maximum support for future claims. Weave in concepts from the "Best Mode" claims and report analysis throughout the description to ensure robust support.`, contentSchema, systemInstruction);
-  const embodimentsContent = await generateSection(`Generate ONLY a numbered list of "EMBODIMENTS" that read like claims, based on the "Best Mode" claims from the report. Do not include a "CLAIMS" section heading.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const abstractContent = await generateSection(`Generate ONLY the "ABSTRACT OF THE DISCLOSURE" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+**CRITICAL DIRECTIVES FOR PROVISIONAL DRAFTING:**
+1.  **Maximize Disclosure:** While formal claims are not required, every sentence you write should be aimed at supporting future claims. Describe every feature, alternative, and embodiment in painstaking detail.
+2.  **Narrative is Key:** Do not just create a list. You must write clear, descriptive prose that explains the invention's context, purpose, components, and operation. The goal is a complete technical document, not just a list of features.
+3.  **No Placeholders:** You must write the full, complete text for the requested section. Do NOT use placeholders like "[Insert details here]".`;
 
-  // Create a combined context for better figure generation
-  const fullSpecTextForFigGen = `${titleContent}\n${backgroundContent}\n${summaryContent}\n${descriptionContent}\n${embodimentsContent}`;
-  const figures = await generateFiguresForApplication(fullSpecTextForFigGen, invention.sourceContent);
+    const contentSchema = { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ['content'] };
 
-  // Assemble the document programmatically and apply numbering in the correct order
-  let markdownContent = ``;
-  let paraCounter = 1;
+    // Generate each section individually for better quality and control.
+    const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, provisionalSystemInstruction);
+    const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section. Explain the technical field, problems with existing solutions, and the context that makes this invention necessary and useful.\n\n${basePromptContext}`, contentSchema, provisionalSystemInstruction);
+    const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section. Provide a high-level overview of the invention, its main components, and its key advantages and benefits.\n\n${basePromptContext}`, contentSchema, provisionalSystemInstruction);
+    
+    const descriptionPrompt = `Generate ONLY the "DETAILED DESCRIPTION OF THE INVENTION" section. This is the most critical part of the provisional application. Your task is to create an exhaustive and descriptive narrative.
+    
+Follow these rules:
+1.  **Write in Rich Prose:** Describe the invention's structure, components, and operation in clear paragraphs. Explain *how* the different parts work together.
+2.  **Be Exhaustive:** Weave in detailed descriptions of every conceivable alternative, variation, and embodiment from the source material. Use the "Best Mode" claims from the report as a guide for the core concepts, but expand far beyond them into every nook and cranny of the disclosure.
+3.  **Include an Embodiments List (Optional but Encouraged):** In addition to the prose, you may include a numbered list of specific embodiments (e.g., "1. A system comprising...") to explicitly capture key features. This list should supplement, not replace, the descriptive prose.
+4.  **Connect to Drawings:** If figures are implied in the source material, refer to them hypothetically (e.g., "As may be depicted in FIG. 1, the system includes...").
 
-  markdownContent += `TITLE OF THE INVENTION\n\n${titleContent}\n\n`;
-  
-  markdownContent += `BACKGROUND OF THE INVENTION\n\n`;
-  const { numberedText: bgText, nextNum: bgNext } = addParagraphNumbers(backgroundContent, paraCounter);
-  markdownContent += `${bgText}\n\n`;
-  paraCounter = bgNext;
+The goal is to create a rich document that provides maximum support for a future non-provisional application by establishing clear antecedent basis for a wide range of potential claims.
+---
+${basePromptContext}
+`;
+    const descriptionContent = await generateSection(descriptionPrompt, contentSchema, provisionalSystemInstruction);
+    
+    // Abstract generation remains the same.
+    const abstractPrompt = `Based on the following technical specification, write a brief, one-paragraph "ABSTRACT OF THE DISCLOSURE" that broadly summarizes the technology.
+    
+--- SPECIFICATION ---
+${titleContent}\n${summaryContent}\n${descriptionContent.substring(0, 20000)}
+`;
+    const abstractContent = await generateSection(abstractPrompt, contentSchema, "You are a helpful assistant summarizing a technical document.");
 
-  markdownContent += `SUMMARY OF THE INVENTION\n\n`;
-  const { numberedText: sumText, nextNum: sumNext } = addParagraphNumbers(summaryContent, paraCounter);
-  markdownContent += `${sumText}\n\n`;
-  paraCounter = sumNext;
-  
-  if (figures && figures.length > 0) {
-      let figureDescriptionText = 'BRIEF DESCRIPTION OF THE SEVERAL VIEWS OF THE DRAWING\n\n';
-      figures.forEach(fig => {
-          figureDescriptionText += `FIG. ${fig.figureNumber} is a drawing illustrating ${fig.description.toLowerCase()}.\n`;
-      });
-      const { numberedText: figDescText, nextNum: figNext } = addParagraphNumbers(figureDescriptionText, paraCounter);
-      markdownContent += `${figDescText}\n\n`;
-      paraCounter = figNext;
-  }
+    // Figure generation remains the same.
+    const fullSpecTextForFigGen = `${titleContent}\n${backgroundContent}\n${summaryContent}\n${descriptionContent}`;
+    const figures = await generateFiguresForApplication(fullSpecTextForFigGen, invention.sourceContent);
 
-  markdownContent += `DETAILED DESCRIPTION OF THE INVENTION\n\n`;
-  const { numberedText: descText, nextNum: descNext } = addParagraphNumbers(descriptionContent, paraCounter);
-  markdownContent += `${descText}\n\n`;
-  paraCounter = descNext;
+    // Assemble the document without paragraph numbering.
+    let markdownContent = ``;
+    markdownContent += `TITLE OF THE INVENTION\n\n${titleContent}\n\n`;
+    markdownContent += `BACKGROUND OF THE INVENTION\n\n${backgroundContent}\n\n`;
+    markdownContent += `SUMMARY OF THE INVENTION\n\n${summaryContent}\n\n`;
 
-  // Embodiments are not numbered with [000x]
-  markdownContent += `EMBODIMENTS\n\n${embodimentsContent}\n\n`;
-
-  // Abstract is not numbered
-  markdownContent += `ABSTRACT OF THE DISCLOSURE\n\n${abstractContent}\n\n`;
-  
-  return { type: 'provisional', markdownContent, figures };
+    if (figures && figures.length > 0) {
+        let figureDescriptionText = 'BRIEF DESCRIPTION OF THE SEVERAL VIEWS OF THE DRAWING\n\n';
+        figures.forEach(fig => {
+            figureDescriptionText += `FIG. ${fig.figureNumber} is a drawing illustrating ${fig.description.toLowerCase()}.\n`;
+        });
+        markdownContent += `${figureDescriptionText}\n\n`;
+    }
+    
+    markdownContent += `DETAILED DESCRIPTION OF THE INVENTION\n\n${descriptionContent}\n\n`;
+    
+    markdownContent += `ABSTRACT OF THE DISCLOSURE\n\n${abstractContent}\n\n`;
+    
+    return { type: 'provisional', markdownContent, figures };
 };

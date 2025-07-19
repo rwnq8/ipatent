@@ -89,6 +89,12 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
     return null;
   }
 
+  const handleStartNewAnalysisClick = () => {
+    if (window.confirm('Are you sure you want to start a new analysis? The current report will be discarded.')) {
+      onStartNewAnalysis();
+    }
+  };
+
   const handleExportMarkdown = (content: string, exportTypeSuffix: string) => {
     if (!content) return;
 
@@ -290,7 +296,7 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
         </h2>
         <div className="flex items-center gap-2">
             <button
-                onClick={onStartNewAnalysis}
+                onClick={handleStartNewAnalysisClick}
                 className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                 title="Start a new analysis"
             >

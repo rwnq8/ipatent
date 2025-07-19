@@ -2,6 +2,8 @@
 
 
 
+
+
 import { useReducer, useCallback, useEffect } from 'react';
 import { processUploadedFiles } from '../services/fileParserService';
 import {
@@ -221,6 +223,16 @@ const appReducer = (state: AppState, action: Action): AppState => {
             patentAnalysisReport: null,
             selectedInvention: null,
             discoveredPriorArt: [],
+            error: null,
+            success: null,
+        };
+    case 'START_NEW_DRAFT':
+        return {
+            ...state,
+            status: 'reportReady',
+            patentApplication: null,
+            error: null,
+            success: null,
         };
     case 'REMOVE_KB_ENTRY': {
         const updatedKb = removeKnowledgeBaseEntry(action.payload);
@@ -259,7 +271,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
     }
     case 'SET_ASYNC_ERROR': {
       const message = sanitizeMessage(action.payload);
-      return { ...state, status: 'idle', error: message, selectedInvention: null };
+      // Reset to a stable, non-loading state
+      const nextStatus = state.status === 'generatingApplication' ? 'reportReady' 
+                       : state.status === 'generatingReport' ? 'inventionsReadyForSelection' 
+                       : 'idle';
+      return { ...state, status: nextStatus, error: message };
     }
     case 'SET_ERROR':
       return { ...state, status: 'idle', error: action.payload };
@@ -338,7 +354,6 @@ export const useAppManager = () => {
   const handleGenerateReport = useCallback(async (inventionToAnalyze: ExtractedInvention) => {
       dispatch({ type: 'GENERATE_REPORT_START' });
       try {
-        // Reverted: Always use the full knowledge base for unsupervised context.
         const report = await generatePatentabilityReport(inventionToAnalyze, state.ownedKnowledgeBase);
         dispatch({ type: 'GENERATE_REPORT_SUCCESS', payload: report });
       } catch (err) {
@@ -372,6 +387,10 @@ export const useAppManager = () => {
 
   const startNewAnalysis = useCallback(() => {
     dispatch({ type: 'START_NEW_ANALYSIS' });
+  }, [dispatch]);
+
+  const startNewDraft = useCallback(() => {
+    dispatch({ type: 'START_NEW_DRAFT' });
   }, [dispatch]);
 
   const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), [dispatch]);
@@ -408,7 +427,15 @@ export const useAppManager = () => {
         const result = importKnowledgeBase(text);
         dispatch({ type: 'IMPORT_KB_SUCCESS', payload: result });
       } catch (err) {
-        dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
+        let errorMessage = 'Failed to import knowledge base.';
+        if (err instanceof Error) {
+            if (err.message.toLowerCase().includes('json')) {
+                errorMessage = 'Import failed: The file is not valid JSON or has an incorrect format.';
+            } else {
+                errorMessage = err.message;
+            }
+        }
+        dispatch({ type: 'SET_ASYNC_ERROR', payload: errorMessage });
       }
     };
     reader.readAsText(file);
@@ -453,7 +480,15 @@ export const useAppManager = () => {
         const result = importPinnedIdeas(text);
         dispatch({ type: 'IMPORT_PINNED_IDEAS_SUCCESS', payload: result });
       } catch (err) {
-        dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
+        let errorMessage = 'Failed to import pinned ideas.';
+        if (err instanceof Error) {
+            if (err.message.toLowerCase().includes('json')) {
+                errorMessage = 'Import failed: The file is not valid JSON or has an incorrect format.';
+            } else {
+                errorMessage = err.message;
+            }
+        }
+        dispatch({ type: 'SET_ASYNC_ERROR', payload: errorMessage });
       }
     };
     reader.readAsText(file);
@@ -503,6 +538,7 @@ export const useAppManager = () => {
     handleInventionSelection,
     handleGenerateApplication,
     startNewAnalysis,
+    startNewDraft,
     handleRemoveKbEntry,
     handleAddNewKbEntry,
     handleExportKb,

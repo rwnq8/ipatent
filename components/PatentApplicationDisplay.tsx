@@ -1,5 +1,9 @@
 
 
+
+
+
+
 import React from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -122,10 +126,10 @@ export function PatentApplicationDisplay({ application, inventionTitle, onGenera
             <button
               onClick={onGenerateNew}
               className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-              title="Generate a different draft type"
+              title="Return to the report to generate a different draft type"
             >
               <PencilIcon className="mr-2 h-5 w-5" />
-              New Draft
+              Back to Report
             </button>
             <button
               onClick={handleExportMarkdown}
