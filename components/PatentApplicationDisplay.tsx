@@ -1,34 +1,22 @@
-
-
-
-
-
-
 import React from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkSlug from 'remark-slug';
-import { DownloadIcon, ExternalLinkIcon, PencilIcon } from './icons';
+import { DownloadIcon, ExternalLinkIcon, PencilIcon, ExclamationTriangleIcon, SparklesIcon } from './icons';
 import { PatentApplication } from '../types';
 import { sanitizeForFilename } from '../services/utils';
-import { Spinner } from './Spinner';
 
 interface PatentApplicationDisplayProps {
-  application: PatentApplication | null;
+  application: PatentApplication;
+  applicationReviewReport: string | null;
   inventionTitle?: string;
   onGenerateNew: () => void;
-  isGenerating: boolean;
+  onRefineApplication: () => void;
+  disabled: boolean;
 }
 
-export function PatentApplicationDisplay({ application, inventionTitle, onGenerateNew, isGenerating }: PatentApplicationDisplayProps) {
-
-  if (isGenerating) {
-    return <Spinner message="Generating application draft... This can take several minutes." />;
-  }
-  
+export function PatentApplicationDisplay({ application, applicationReviewReport, inventionTitle, onGenerateNew, onRefineApplication, disabled }: PatentApplicationDisplayProps) {
   if (!application || !application.markdownContent) {
-    // This case should ideally not be reached if the component is rendered correctly.
-    // It's a fallback.
     return null;
   }
 
@@ -45,7 +33,8 @@ export function PatentApplicationDisplay({ application, inventionTitle, onGenera
   };
 
   const handleExportMarkdown = () => {
-    if (!application.markdownContent) return;
+    const contentToExport = application.markdownContent;
+    if (!contentToExport) return;
     
     const exportTypeSuffix = application.type === 'provisional' 
       ? 'provisional_patent_application' 
@@ -55,7 +44,7 @@ export function PatentApplicationDisplay({ application, inventionTitle, onGenera
     const baseFilename = sanitizedTitle ? `${sanitizedTitle}_${exportTypeSuffix}` : exportTypeSuffix;
     const filename = getFilename(baseFilename, 'md');
 
-    const blob = new Blob([application.markdownContent], { type: 'text/markdown;charset=utf-8' });
+    const blob = new Blob([contentToExport], { type: 'text/markdown;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
@@ -125,57 +114,86 @@ export function PatentApplicationDisplay({ application, inventionTitle, onGenera
         <div className="flex items-center gap-2">
             <button
               onClick={onGenerateNew}
-              className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              disabled={disabled}
+              className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Return to the report to generate a different draft type"
             >
               <PencilIcon className="mr-2 h-5 w-5" />
               Back to Report
             </button>
             <button
+                onClick={onRefineApplication}
+                disabled={disabled}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Use AI to automatically fix issues identified in the review report"
+            >
+                <SparklesIcon className="mr-2 h-5 w-5" />
+                Refine with AI
+            </button>
+            <button
               onClick={handleExportMarkdown}
-              className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 bg-blue-600 hover:bg-blue-700 focus:ring-blue-500`}
+              disabled={disabled}
+              className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               <DownloadIcon className="mr-2 h-5 w-5" />
               Export Text
             </button>
         </div>
       </div>
-      
-      {hasFigures && (
-        <div className="prose prose-slate lg:prose-xl max-w-none">
-            <h2 id="drawings" className="text-xl font-bold text-slate-800 mt-10 mb-5 pb-3 border-b border-slate-300 uppercase tracking-wide scroll-mt-20">DRAWINGS</h2>
-            <div className="space-y-8">
-                {application.figures!.map(figure => (
-                    <div key={figure.figureNumber} className="text-center p-4 border border-slate-200 rounded-lg shadow-sm bg-slate-50">
-                        <div className="flex justify-between items-center mb-2">
-                            <strong className="text-sm font-semibold text-slate-700">FIG. {figure.figureNumber}</strong>
-                            <button
-                                onClick={() => handleExportImage(figure.imageUrl, figure.figureNumber)}
-                                className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                            >
-                                <DownloadIcon className="mr-1 h-3 w-3" />
-                                Download
-                            </button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
+        <div className="lg:col-span-2">
+            <>
+                {hasFigures && (
+                    <div className="prose prose-slate lg:prose-xl max-w-none">
+                        <h2 id="drawings" className="text-xl font-bold text-slate-800 mt-10 mb-5 pb-3 border-b border-slate-300 uppercase tracking-wide scroll-mt-20">DRAWINGS</h2>
+                        <div className="space-y-8">
+                            {application.figures!.map(figure => (
+                                <div key={figure.figureNumber} className="text-center p-4 border border-slate-200 rounded-lg shadow-sm bg-slate-50">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <strong className="text-sm font-semibold text-slate-700">FIG. {figure.figureNumber}</strong>
+                                        <button
+                                            onClick={() => handleExportImage(figure.imageUrl, figure.figureNumber)}
+                                            className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                                        >
+                                            <DownloadIcon className="mr-1 h-3 w-3" />
+                                            Download
+                                        </button>
+                                    </div>
+                                    <img 
+                                        src={figure.imageUrl} 
+                                        alt={`Patent drawing for FIG. ${figure.figureNumber}: ${figure.description}`}
+                                        className="max-w-full h-auto mx-auto my-2 bg-white border border-slate-300 rounded"
+                                    />
+                                    <p className="text-sm text-slate-600 mt-2 italic">{figure.description}</p>
+                                </div>
+                            ))}
                         </div>
-                        <img 
-                            src={figure.imageUrl} 
-                            alt={`Patent drawing for FIG. ${figure.figureNumber}: ${figure.description}`}
-                            className="max-w-full h-auto mx-auto my-2 bg-white border border-slate-300 rounded"
-                        />
-                        <p className="text-sm text-slate-600 mt-2 italic">{figure.description}</p>
                     </div>
-                ))}
+                )}
+                <div className="max-w-none mt-4 prose prose-slate lg:prose-xl"> 
+                    <ReactMarkdown 
+                    remarkPlugins={[remarkGfm, remarkSlug]}
+                    components={components}
+                    >
+                    {application.markdownContent}
+                    </ReactMarkdown>
+                </div>
+            </>
+        </div>
+        <div className="lg:col-span-1">
+            <div className="sticky top-8 bg-amber-50 border-l-4 border-amber-500 p-5 rounded-lg shadow-md">
+                 <div className="flex items-start">
+                    <ExclamationTriangleIcon className="h-6 w-6 text-amber-600 mr-3 mt-1 flex-shrink-0" />
+                    <h3 className="text-xl font-bold text-amber-800 mt-0 mb-4 pb-0 scroll-mt-20">AI Review & Vulnerability Report</h3>
+                </div>
+                <div className="prose prose-sm max-w-none text-amber-900/90">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {applicationReviewReport || "No review report available."}
+                    </ReactMarkdown>
+                </div>
             </div>
         </div>
-      )}
-
-      <div className="max-w-none mt-4 prose prose-slate lg:prose-xl"> 
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm, remarkSlug]}
-          components={components}
-        >
-          {application.markdownContent}
-        </ReactMarkdown>
       </div>
     </div>
   );

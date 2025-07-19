@@ -1,7 +1,3 @@
-
-
-
-
 import React from 'react';
 import { FileUpload } from './components/FileUpload';
 import { PatentApplicationDisplay } from './components/PatentApplicationDisplay';
@@ -12,6 +8,7 @@ import { KnowledgeBase } from './components/KnowledgeBase';
 import { PortfolioSuggestions } from './components/PortfolioSuggestions';
 import { useAppManager } from './hooks/useAppManager';
 import { InventionSelection } from './components/InventionSelection';
+import { LoadAnalysis } from './components/LoadAnalysis';
 
 const IS_API_KEY_CONFIGURED = !!process.env.API_KEY;
 
@@ -20,7 +17,7 @@ export function App() {
 
   const handleCancelGeneration = () => {
     // This handler resets the state, allowing the user to exit a long-running process.
-    if(manager.status === 'generatingApplication') {
+    if(manager.status === 'generatingApplication' || manager.status === 'reviewingApplication' || manager.status === 'refiningApplication') {
         manager.startNewDraft();
     } else {
         manager.startNewAnalysis();
@@ -48,7 +45,12 @@ export function App() {
           onSuccessClose={() => manager.setSuccess(null)}
         />
         
-        <FileUpload onFilesSelected={manager.handleFilesSelected} processing={manager.isLoading} />
+        {manager.status === 'idle' && (
+          <>
+            <FileUpload onFilesSelected={manager.handleFilesSelected} processing={manager.isLoading} />
+            <LoadAnalysis onImport={manager.handleImportExtractedInventions} disabled={manager.isLoading} />
+          </>
+        )}
         
         <PortfolioSuggestions
           suggestions={manager.suggestedPortfolioEntries}
@@ -62,23 +64,25 @@ export function App() {
           ownedEntries={manager.ownedKnowledgeBase}
           pinnedIdeas={manager.pinnedIdeas}
           discoveredEntries={manager.discoveredPriorArt}
+          priorArtLibrary={manager.priorArtLibrary}
           onRemoveEntry={manager.handleRemoveKbEntry}
           onAddEntry={manager.handleAddNewKbEntry}
           onUpdateEntry={manager.handleUpdateKbEntry}
-          onExport={manager.handleExportKb}
-          onImport={manager.handleImportKb}
+          onExportAll={manager.handleExportFullKb}
+          onImportAll={manager.handleImportFullKb}
           onPinEntry={manager.handlePinPriorArt}
           onRemovePinnedIdea={manager.handleRemovePinnedIdea}
           onUpdatePinnedIdea={manager.handleUpdatePinnedIdea}
-          onExportPinnedIdeas={manager.handleExportPinnedIdeas}
-          onImportPinnedIdeas={manager.handleImportPinnedIdeas}
+          onAddNewPinnedIdea={manager.handleAddNewPinnedIdea}
+          onRemovePriorArtLibraryEntry={manager.handleRemovePriorArtLibraryEntry}
+          onUpdatePriorArtLibraryEntry={manager.handleUpdatePriorArtLibraryEntry}
           disabled={manager.isLoading}
         />
 
         {manager.isLoading && (
             <Spinner
                 message={manager.loadingMessage}
-                onCancel={['generatingReport', 'generatingApplication'].includes(manager.status) ? handleCancelGeneration : undefined}
+                onCancel={['generatingReport', 'generatingApplication', 'reviewingApplication', 'refiningApplication'].includes(manager.status) ? handleCancelGeneration : undefined}
             />
         )}
         
@@ -87,6 +91,7 @@ export function App() {
             inventions={manager.extractedInventions}
             selectedInvention={manager.selectedInvention}
             onSelectInvention={manager.handleInventionSelection}
+            onExport={manager.handleExportExtractedInventions}
             disabled={manager.isLoading}
           />
         )}
@@ -97,6 +102,7 @@ export function App() {
               reportTitle={manager.selectedInvention?.title}
               onStartNewAnalysis={manager.startNewAnalysis}
               onGenerateApplication={manager.handleGenerateApplication}
+              onUpdateReport={manager.handleUpdateReportContent}
               disabled={manager.isLoading}
             />
         )}
@@ -104,9 +110,11 @@ export function App() {
         {manager.status === 'applicationReady' && manager.patentApplication && (
            <PatentApplicationDisplay 
               application={manager.patentApplication} 
+              applicationReviewReport={manager.applicationReviewReport}
               inventionTitle={manager.selectedInvention?.title}
               onGenerateNew={manager.startNewDraft}
-              isGenerating={manager.isLoading}
+              onRefineApplication={manager.handleRefineApplication}
+              disabled={manager.isLoading}
             />
         )}
       </main>

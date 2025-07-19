@@ -1,4 +1,6 @@
-import React from 'react';
+
+
+import React, { useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm'; // For GitHub Flavored Markdown (tables, etc.)
 import remarkSlug from 'remark-slug';
@@ -13,6 +15,7 @@ interface ReportDisplayProps {
   reportTitle?: string;
   onStartNewAnalysis: () => void;
   onGenerateApplication: (type: 'provisional' | 'non-provisional') => void;
+  onUpdateReport: (newContent: string) => void;
   disabled: boolean;
 }
 
@@ -84,7 +87,10 @@ const getNodeText = (node: any): string => {
 };
 
 
-export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGenerateApplication, disabled }: ReportDisplayProps) {
+export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGenerateApplication, onUpdateReport, disabled }: ReportDisplayProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(report?.markdownContent || '');
+
   if (!report || !report.markdownContent) {
     return null;
   }
@@ -93,6 +99,20 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
     if (window.confirm('Are you sure you want to start a new analysis? The current report will be discarded.')) {
       onStartNewAnalysis();
     }
+  };
+  
+  const handleEdit = () => {
+      setEditedContent(report.markdownContent);
+      setIsEditing(true);
+  };
+  
+  const handleCancel = () => {
+      setIsEditing(false);
+  };
+  
+  const handleSave = () => {
+      onUpdateReport(editedContent);
+      setIsEditing(false);
   };
 
   const handleExportMarkdown = (content: string, exportTypeSuffix: string) => {
@@ -133,7 +153,7 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
 
   const exportBestModeClaims = () => {
     const section5Content = extractSectionContent(report.markdownContent, "## Section 5", "--- APPENDICES ---");
-    const bestModeClaimsContent = extractSectionContent(section5Content, '### A. "Best Mode" Revised Claims', '### B.');
+    const bestModeClaimsContent = extractSectionContent(section5Content, '### A. Best Mode Revised Claims', '### B.');
     handleExportMarkdown(bestModeClaimsContent, 'best_mode_revised_claims');
   };
 
@@ -303,6 +323,14 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
                 <PencilIcon className="mr-2 h-5 w-5" />
                 New Analysis
             </button>
+             <button
+                onClick={handleEdit}
+                className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                title="Edit this report"
+            >
+                <PencilIcon className="mr-2 h-5 w-5" />
+                Edit Report
+            </button>
             <button
               onClick={exportFullReport}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"
@@ -313,59 +341,87 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
         </div>
       </div>
       
-      <div className="my-6 flex flex-wrap gap-2">
-         <button
-          onClick={exportInitialClaims}
-          className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
-        >
-          <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Initial Claims
-        </button>
-        <button
-          onClick={exportBestModeClaims}
-          className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
-        >
-          <DownloadIcon className="mr-1.5 h-4 w-4" /> Export 'Best Mode' Claims
-        </button>
-        <button
-          onClick={exportStrategicOpportunities}
-          className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
-        >
-          <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Strategic Opportunities
-        </button>
-        <button
-          onClick={exportGoNoGoAssessment}
-          className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
-        >
-          <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Go/No-Go Assessment
-        </button>
-      </div>
-      
-      <div className="max-w-none mt-4 prose prose-slate lg:prose-xl"> 
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm, remarkSlug]}
-          components={components}
-        >
-          {mainPart}
-        </ReactMarkdown>
-      </div>
-
-      {redTeamPart ? (
-        <div className="mt-12 p-6 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
-           <ReactMarkdown 
-             remarkPlugins={[remarkGfm, remarkSlug]}
-             components={redTeamComponents}
-           >
-             {redTeamPart}
-           </ReactMarkdown>
-        </div>
+      {isEditing ? (
+          <div className="my-6">
+              <textarea
+                  value={editedContent}
+                  onChange={(e) => setEditedContent(e.target.value)}
+                  className="w-full p-4 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                  rows={30}
+                  aria-label="Report markdown content"
+              />
+              <div className="mt-4 flex justify-end gap-2">
+                  <button
+                      onClick={handleCancel}
+                      className="px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50"
+                  >
+                      Cancel
+                  </button>
+                  <button
+                      onClick={handleSave}
+                      className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                  >
+                      Save Changes
+                  </button>
+              </div>
+          </div>
       ) : (
-        <div className="mt-12">
-            <Alert
-                type="warning"
-                title="Red Team Analysis Missing"
-                message="The AI model did not provide the mandatory 'Red Team Analysis' section. This self-critique is a required part of a robust analysis. Please treat the conclusions of this report with extra caution, as its potential weaknesses and unstated assumptions have not been reviewed."
-            />
-        </div>
+        <>
+          <div className="my-6 flex flex-wrap gap-2">
+            <button
+              onClick={exportInitialClaims}
+              className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
+            >
+              <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Initial Claims
+            </button>
+            <button
+              onClick={exportBestModeClaims}
+              className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
+            >
+              <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Best Mode Claims
+            </button>
+            <button
+              onClick={exportStrategicOpportunities}
+              className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
+            >
+              <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Strategic Opportunities
+            </button>
+            <button
+              onClick={exportGoNoGoAssessment}
+              className="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors"
+            >
+              <DownloadIcon className="mr-1.5 h-4 w-4" /> Export Go/No-Go Assessment
+            </button>
+          </div>
+          
+          <div className="max-w-none mt-4 prose prose-slate lg:prose-xl"> 
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm, remarkSlug]}
+              components={components}
+            >
+              {mainPart}
+            </ReactMarkdown>
+          </div>
+
+          {redTeamPart ? (
+            <div className="mt-12 p-6 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm, remarkSlug]}
+                components={redTeamComponents}
+              >
+                {redTeamPart}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <div className="mt-12">
+                <Alert
+                    type="warning"
+                    title="Red Team Analysis Missing"
+                    message="The AI model did not provide the mandatory 'Red Team Analysis' section. This self-critique is a required part of a robust analysis. Please treat the conclusions of this report with extra caution, as its potential weaknesses and unstated assumptions have not been reviewed."
+                />
+            </div>
+          )}
+        </>
       )}
 
       {/* --- Generation Actions --- */}
@@ -377,14 +433,14 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
         <div className="flex flex-col sm:flex-row justify-end items-center gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
             <button
                 onClick={() => onGenerateApplication('provisional')}
-                disabled={disabled}
+                disabled={disabled || isEditing}
                 className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-teal-500 text-sm font-medium rounded-md shadow-sm text-teal-700 bg-white hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-300 disabled:cursor-not-allowed"
             >
                 Draft Provisional App
             </button>
             <button
                 onClick={() => onGenerateApplication('non-provisional')}
-                disabled={disabled}
+                disabled={disabled || isEditing}
                 className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-green-600 text-sm font-medium rounded-md shadow-sm text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-300 disabled:cursor-not-allowed"
             >
                 Draft Non-Provisional App

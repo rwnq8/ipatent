@@ -1,11 +1,14 @@
 
+
 import React from 'react';
 import { ExtractedInvention } from '../types';
+import { DownloadIcon } from './icons';
 
 interface InventionSelectionProps {
     inventions: ExtractedInvention[];
     selectedInvention: ExtractedInvention | null;
     onSelectInvention: (invention: ExtractedInvention | null) => void;
+    onExport: () => void;
     disabled: boolean;
 }
 
@@ -13,6 +16,7 @@ export function InventionSelection({
     inventions, 
     selectedInvention,
     onSelectInvention, 
+    onExport,
     disabled 
 }: InventionSelectionProps) {
     if (!inventions || inventions.length === 0) {
@@ -36,9 +40,27 @@ export function InventionSelection({
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-lg mt-8">
-            <h2 className="text-xl font-semibold text-slate-700 mb-2">Step 1: Select Invention for Analysis</h2>
-            <p className="text-sm text-slate-600 mb-6">
-                The AI has identified the following potential inventions from your documents. Please select **one** to proceed with for a deep-dive prior art search and analysis.
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 gap-4">
+                <div className="flex-grow">
+                     <h2 className="text-xl font-semibold text-slate-700">Step 1: Select Invention for Analysis</h2>
+                     <p className="text-sm text-slate-600 mt-1">
+                        The AI has identified the following potential inventions. Select **one** to proceed with a deep-dive analysis.
+                    </p>
+                </div>
+                <div className="flex-shrink-0">
+                    <button
+                        onClick={onExport}
+                        disabled={disabled}
+                        className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                    >
+                        <DownloadIcon className="mr-2 h-4 w-4" />
+                        Export This List
+                    </button>
+                </div>
+            </div>
+            
+            <p className="text-xs text-slate-500 mb-6">
+                You can export this list to save your session and load it later to resume your work.
             </p>
 
             <div className="space-y-4">

@@ -18,6 +18,7 @@
     "react-markdown": "8.0.7",
     "remark-gfm": "3.0.1",
     "remark-slug": "7.0.0",
+    "pako": "2.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {

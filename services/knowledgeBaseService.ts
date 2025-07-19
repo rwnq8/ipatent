@@ -1,8 +1,17 @@
 import { KnowledgeBaseEntry, KnowledgeBaseUpdateResult } from '../types';
-import { normalizeApplicationNumber } from './utils';
+import { normalizeApplicationNumber, sanitizeMessage } from './utils';
+import pako from 'pako';
 
 const KB_STORAGE_KEY = 'patentAnalyzerKnowledgeBase';
 const PINNED_IDEAS_STORAGE_KEY = 'patentAnalyzerPinnedIdeas';
+const PRIOR_ART_LIBRARY_KEY = 'patentAnalyzerPriorArtLibrary';
+
+
+interface FullKnowledgeBase {
+  portfolio: KnowledgeBaseEntry[];
+  priorArtLibrary: KnowledgeBaseEntry[];
+  pinnedIdeas: KnowledgeBaseEntry[];
+}
 
 /**
  * Merges duplicate entries in a knowledge base. It uses a normalized application
@@ -14,10 +23,13 @@ const deduplicateKnowledgeBase = (kb: KnowledgeBaseEntry[]): KnowledgeBaseEntry[
     const entryMap = new Map<string, KnowledgeBaseEntry>();
 
     for (const currentEntry of kb) {
-        const normalizedAppNum = normalizeApplicationNumber(currentEntry.applicationNumber);
-        
+        // For non-owned prior art, the applicationNumber (which can be a URL) is a better key
+        const uniqueKeySource = currentEntry.isOwner 
+            ? normalizeApplicationNumber(currentEntry.applicationNumber)
+            : currentEntry.applicationNumber;
+
         // Handle entries without a valid application number by treating their ID as the unique key
-        const mapKey = normalizedAppNum || `id:${currentEntry.id}`;
+        const mapKey = uniqueKeySource || `id:${currentEntry.id}`;
         const existingEntry = entryMap.get(mapKey);
 
         if (existingEntry) {
@@ -104,20 +116,36 @@ const deduplicateKnowledgeBase = (kb: KnowledgeBaseEntry[]): KnowledgeBaseEntry[
     return dedupedList;
 };
 
-// --- Main Knowledge Base (Portfolio) Functions ---
-
-export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
+// Generic loader function with decompression and backward compatibility
+const loadItemsFromStorage = (key: string): KnowledgeBaseEntry[] => {
   try {
-    const rawData = localStorage.getItem(KB_STORAGE_KEY);
+    const rawData = localStorage.getItem(key);
     if (!rawData) return [];
-    const kb = JSON.parse(rawData);
-    if (Array.isArray(kb)) {
-      const migratedKb = kb
+    
+    let items;
+    // Check if data is compressed (starts with our identifier)
+    if (rawData.startsWith('pako:')) {
+        const compressedData = atob(rawData.substring(5));
+        const uint8Array = Uint8Array.from(compressedData, c => c.charCodeAt(0));
+        const decompressed = pako.inflate(uint8Array, { to: 'string' });
+        items = JSON.parse(decompressed);
+    } else {
+        // Backward compatibility: If not compressed, parse as plain JSON
+        // and re-save it in the compressed format.
+        items = JSON.parse(rawData);
+        if (Array.isArray(items)) {
+            console.log(`Migrating uncompressed data for key "${key}" to new compressed format.`);
+            saveItemsToStorage(key, items); // This will compress and save
+        }
+    }
+
+    if (Array.isArray(items)) {
+      const migratedItems = items
         .map((item): KnowledgeBaseEntry | null => {
-          if (typeof item === 'object' && item !== null && 'id' in item && 'isOwner' in item) {
-            const newEntry: KnowledgeBaseEntry = {
+          if (typeof item === 'object' && item !== null && 'id' in item) {
+             const newEntry: KnowledgeBaseEntry = {
               id: item.id,
-              isOwner: item.isOwner,
+              isOwner: typeof item.isOwner === 'boolean' ? item.isOwner : true,
               type: item.type || 'non-provisional',
               title: item.title || 'Untitled',
               applicationNumber: item.applicationNumber || 'N/A',
@@ -137,24 +165,87 @@ export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
         })
         .filter((item): item is KnowledgeBaseEntry => item !== null);
 
-      return deduplicateKnowledgeBase(migratedKb);
+      return deduplicateKnowledgeBase(migratedItems);
     }
     return [];
   } catch (error) {
-    console.error("Failed to load knowledge base from localStorage", error);
-    localStorage.removeItem(KB_STORAGE_KEY);
+    console.error(`Failed to load items from localStorage key "${key}"`, error);
+    localStorage.removeItem(key);
     return [];
   }
 };
 
-export const saveKnowledgeBase = (kb: KnowledgeBaseEntry[]): void => {
+// Generic save function with compression
+const saveItemsToStorage = (key: string, items: KnowledgeBaseEntry[]): void => {
   try {
-    const cleanKb = deduplicateKnowledgeBase(kb);
-    const ownedEntries = cleanKb.filter(e => e.isOwner);
-    localStorage.setItem(KB_STORAGE_KEY, JSON.stringify(ownedEntries));
+    const cleanItems = deduplicateKnowledgeBase(items);
+    const jsonString = JSON.stringify(cleanItems);
+
+    // Compress the data using pako
+    const compressed = pako.deflate(jsonString);
+    
+    // Convert Uint8Array to a binary string iteratively to avoid stack overflow with large data sets.
+    // The previous method using String.fromCharCode.apply() fails on large arrays.
+    let binaryString = '';
+    for (let i = 0; i < compressed.length; i++) {
+        binaryString += String.fromCharCode(compressed[i]);
+    }
+    const compressedString = btoa(binaryString);
+    
+    // Add prefix to identify compressed data
+    localStorage.setItem(key, `pako:${compressedString}`);
+
   } catch (error) {
-    console.error("Failed to save knowledge base to localStorage", error);
+    console.error(`Failed to save items to localStorage key "${key}"`, error);
+    // Add specific check for QuotaExceededError
+    if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.message.toLowerCase().includes('exceeded the quota'))) {
+        alert(`Storage Limit Reached!\n\nThe data for "${key}" is too large to be saved in your browser, even after compression. Please export some of your data and clear it to free up space.`);
+    }
   }
+};
+
+
+// Generic import function
+const importItems = (jsonString: string, currentItems: KnowledgeBaseEntry[], defaultIsOwner: boolean): KnowledgeBaseUpdateResult => {
+    let importedEntries;
+    try {
+        importedEntries = JSON.parse(jsonString);
+        if (!Array.isArray(importedEntries)) {
+            throw new Error("Imported data is not a valid JSON array.");
+        }
+    } catch (error) {
+        console.error("Failed to parse imported JSON:", error);
+        throw new Error(`Import failed during parsing: ${(error as Error).message}`);
+    }
+
+    const validatedNewEntries: Omit<KnowledgeBaseEntry, 'id'>[] = importedEntries.map(item => ({
+        isOwner: typeof item.isOwner === 'boolean' ? item.isOwner : defaultIsOwner,
+        type: item.type || 'non-provisional',
+        title: item.title || 'Untitled',
+        applicationNumber: item.applicationNumber || 'N/A',
+        filingDate: item.filingDate || '',
+        priorityTo: item.priorityTo,
+        files: Array.isArray(item.files) ? item.files : [],
+        extractedClaims: Array.isArray(item.extractedClaims) ? item.extractedClaims : [],
+        extractedEmbodiments: Array.isArray(item.extractedEmbodiments) ? item.extractedEmbodiments : [],
+        isComplete: typeof item.isComplete === 'boolean' ? item.isComplete : false,
+        notes: item.notes || '',
+    }));
+    
+    const combinedKb = [...currentItems, ...validatedNewEntries.map(e => ({...e, id: `import-${Date.now()}-${Math.random()}`}))];
+    const finalKb = deduplicateKnowledgeBase(combinedKb);
+
+    const addedCount = finalKb.length - currentItems.length;
+
+    return { updatedKb: finalKb, addedCount: Math.max(0, addedCount), updatedCount: 0, conflicts: [] };
+};
+
+// --- Main Knowledge Base (Portfolio) Functions ---
+
+export const getKnowledgeBase = (): KnowledgeBaseEntry[] => loadItemsFromStorage(KB_STORAGE_KEY);
+export const saveKnowledgeBase = (kb: KnowledgeBaseEntry[]): void => {
+    const ownedEntries = kb.filter(e => e.isOwner);
+    saveItemsToStorage(KB_STORAGE_KEY, ownedEntries);
 };
 
 export const removeKnowledgeBaseEntry = (id: string): KnowledgeBaseEntry[] => {
@@ -169,120 +260,80 @@ export const removeKnowledgeBaseEntry = (id: string): KnowledgeBaseEntry[] => {
   return kb;
 };
 
-export const exportKnowledgeBase = (): string => {
-    const kb = getKnowledgeBase();
-    return JSON.stringify(kb, null, 2);
-};
-
-export const importKnowledgeBase = (jsonString: string): KnowledgeBaseUpdateResult => {
-    const currentKb = getKnowledgeBase();
-    let importedEntries;
-    try {
-        importedEntries = JSON.parse(jsonString);
-        if (!Array.isArray(importedEntries)) {
-            throw new Error("Imported data is not a valid JSON array.");
-        }
-    } catch (error) {
-        console.error("Failed to parse imported knowledge base:", error);
-        throw new Error(`Import failed during parsing: ${(error as Error).message}`);
-    }
-
-    const validatedNewEntries: Omit<KnowledgeBaseEntry, 'id'>[] = importedEntries.map(item => ({
-        isOwner: true,
-        type: item.type || 'non-provisional',
-        title: item.title || 'Untitled',
-        applicationNumber: item.applicationNumber || 'N/A',
-        filingDate: item.filingDate || '',
-        priorityTo: item.priorityTo,
-        files: Array.isArray(item.files) ? item.files : [],
-        extractedClaims: Array.isArray(item.extractedClaims) ? item.extractedClaims : [],
-        extractedEmbodiments: Array.isArray(item.extractedEmbodiments) ? item.extractedEmbodiments : [],
-        isComplete: typeof item.isComplete === 'boolean' ? item.isComplete : false,
-        notes: item.notes || '',
-    }));
-    
-    const combinedKb = [...currentKb, ...validatedNewEntries.map(e => ({...e, id: `import-${Date.now()}-${Math.random()}`}))];
-    saveKnowledgeBase(combinedKb);
-    const finalKb = getKnowledgeBase();
-
-    const addedCount = finalKb.length - currentKb.length;
-
-    return { updatedKb: finalKb, addedCount: Math.max(0, addedCount), updatedCount: 0, conflicts: [] };
-};
-
-
 // --- Pinned Ideas Functions ---
 
-export const getPinnedIdeas = (): KnowledgeBaseEntry[] => {
-  try {
-    const rawData = localStorage.getItem(PINNED_IDEAS_STORAGE_KEY);
-    if (!rawData) return [];
-    const ideas = JSON.parse(rawData);
-    if (Array.isArray(ideas)) {
-      return deduplicateKnowledgeBase(ideas);
-    }
-    return [];
-  } catch (error) {
-    console.error("Failed to load pinned ideas from localStorage", error);
-    localStorage.removeItem(PINNED_IDEAS_STORAGE_KEY);
-    return [];
-  }
-};
-
-export const savePinnedIdeas = (ideas: KnowledgeBaseEntry[]): void => {
-  try {
-    const cleanIdeas = deduplicateKnowledgeBase(ideas);
-    localStorage.setItem(PINNED_IDEAS_STORAGE_KEY, JSON.stringify(cleanIdeas));
-  } catch (error) {
-    console.error("Failed to save pinned ideas to localStorage", error);
-  }
-};
-
+export const getPinnedIdeas = (): KnowledgeBaseEntry[] => loadItemsFromStorage(PINNED_IDEAS_STORAGE_KEY);
+export const savePinnedIdeas = (ideas: KnowledgeBaseEntry[]): void => saveItemsToStorage(PINNED_IDEAS_STORAGE_KEY, ideas);
 export const removePinnedIdea = (id: string): KnowledgeBaseEntry[] => {
-  let ideas = getPinnedIdeas();
-  ideas = ideas.filter(idea => idea.id !== id);
+  let ideas = getPinnedIdeas().filter(idea => idea.id !== id);
   savePinnedIdeas(ideas);
   return ideas;
 };
-
-export const exportPinnedIdeas = (): string => {
+export const addPinnedIdea = (idea: KnowledgeBaseEntry): KnowledgeBaseEntry[] => {
     const ideas = getPinnedIdeas();
-    return JSON.stringify(ideas, null, 2);
+    const newIdea = { ...idea, id: `idea-${Date.now()}-${Math.random()}` };
+    const updatedIdeas = [...ideas, newIdea];
+    savePinnedIdeas(updatedIdeas);
+    return getPinnedIdeas();
 };
 
-export const importPinnedIdeas = (jsonString: string): KnowledgeBaseUpdateResult => {
-    const currentIdeas = getPinnedIdeas();
-    let importedEntries;
-    try {
-        importedEntries = JSON.parse(jsonString);
-        if (!Array.isArray(importedEntries)) {
-            throw new Error("Imported data is not a valid JSON array.");
-        }
-    } catch (error) {
-        console.error("Failed to parse imported ideas:", error);
-        throw new Error(`Import failed during parsing: ${(error as Error).message}`);
+
+// --- Prior Art Library Functions ---
+export const getPriorArtLibrary = (): KnowledgeBaseEntry[] => loadItemsFromStorage(PRIOR_ART_LIBRARY_KEY);
+export const savePriorArtLibrary = (library: KnowledgeBaseEntry[]): void => saveItemsToStorage(PRIOR_ART_LIBRARY_KEY, library);
+export const removePriorArtLibraryEntry = (id: string): KnowledgeBaseEntry[] => {
+  let library = getPriorArtLibrary().filter(entry => entry.id !== id);
+  savePriorArtLibrary(library);
+  return library;
+};
+
+// --- Consolidated Import/Export ---
+export const exportFullKnowledgeBase = (): string => {
+  const fullKb: FullKnowledgeBase = {
+    portfolio: getKnowledgeBase(),
+    priorArtLibrary: getPriorArtLibrary(),
+    pinnedIdeas: getPinnedIdeas(),
+  };
+  return JSON.stringify(fullKb, null, 2);
+};
+
+export const importFullKnowledgeBase = (jsonString: string): { success: boolean, message: string } => {
+  try {
+    const fullKb: FullKnowledgeBase = JSON.parse(jsonString);
+    
+    if (!fullKb || typeof fullKb !== 'object' || !Array.isArray(fullKb.portfolio) || !Array.isArray(fullKb.priorArtLibrary) || !Array.isArray(fullKb.pinnedIdeas)) {
+      throw new Error("Invalid knowledge base file format. The file must contain 'portfolio', 'priorArtLibrary', and 'pinnedIdeas' arrays.");
     }
 
-    const validatedNewEntries: KnowledgeBaseEntry[] = importedEntries.map(item => ({
-        id: item.id || `import-idea-${Date.now()}-${Math.random()}`,
-        isOwner: true, // Treat as "owned" within the pinned list
-        type: item.type || 'non-provisional',
-        title: item.title || 'Untitled',
-        applicationNumber: item.applicationNumber || 'N/A',
-        filingDate: item.filingDate || '',
-        priorityTo: undefined, // Pinned ideas don't have priority claims
-        files: Array.isArray(item.files) ? item.files : [],
-        extractedClaims: Array.isArray(item.extractedClaims) ? item.extractedClaims : [],
-        extractedEmbodiments: Array.isArray(item.extractedEmbodiments) ? item.extractedEmbodiments : [],
-        isComplete: typeof item.isComplete === 'boolean' ? item.isComplete : false,
-        notes: item.notes || '',
-    }));
-    
-    const combinedIdeas = [...currentIdeas, ...validatedNewEntries];
-    savePinnedIdeas(combinedIdeas);
-    const finalIdeas = getPinnedIdeas();
+    saveKnowledgeBase(fullKb.portfolio);
+    savePriorArtLibrary(fullKb.priorArtLibrary);
+    savePinnedIdeas(fullKb.pinnedIdeas);
 
-    const addedCount = finalIdeas.length - currentIdeas.length;
+    const counts = `Portfolio: ${fullKb.portfolio.length}, Library: ${fullKb.priorArtLibrary.length}, Ideas: ${fullKb.pinnedIdeas.length}`;
+    return { success: true, message: `Successfully imported full knowledge base. Counts: ${counts}.` };
+  } catch (error) {
+    console.error("Failed to import full knowledge base:", error);
+    return { success: false, message: `Import failed: ${sanitizeMessage(error)}` };
+  }
+};
 
-    return { updatedKb: finalIdeas, addedCount: Math.max(0, addedCount), updatedCount: 0, conflicts: [] };
+
+// DEPRECATED single-store functions for backward compatibility with App Manager, to be removed.
+export const exportKnowledgeBase = (): string => JSON.stringify(getKnowledgeBase(), null, 2);
+export const importKnowledgeBase = (jsonString: string): KnowledgeBaseUpdateResult => {
+    const result = importItems(jsonString, getKnowledgeBase(), true);
+    saveKnowledgeBase(result.updatedKb);
+    return { ...result, updatedKb: getKnowledgeBase() };
+};
+export const exportPinnedIdeas = (): string => JSON.stringify(getPinnedIdeas(), null, 2);
+export const importPinnedIdeas = (jsonString: string): KnowledgeBaseUpdateResult => {
+    const result = importItems(jsonString, getPinnedIdeas(), true);
+    savePinnedIdeas(result.updatedKb);
+    return { ...result, updatedKb: getPinnedIdeas() };
+};
+export const exportPriorArtLibrary = (): string => JSON.stringify(getPriorArtLibrary(), null, 2);
+export const importPriorArtLibrary = (jsonString: string): KnowledgeBaseUpdateResult => {
+    const result = importItems(jsonString, getPriorArtLibrary(), false); // Prior art is not "owned"
+    savePriorArtLibrary(result.updatedKb);
+    return { ...result, updatedKb: getPriorArtLibrary() };
 };

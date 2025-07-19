@@ -117,6 +117,8 @@ export type AppStatus =
   | 'generatingReport'
   | 'reportReady'
   | 'generatingApplication'
+  | 'reviewingApplication'
+  | 'refiningApplication'
   | 'applicationReady';
 
 
@@ -128,9 +130,11 @@ export interface AppState {
   selectedInvention: ExtractedInvention | null;
   patentAnalysisReport: PatentAnalysisReport | null;
   patentApplication: PatentApplication | null;
+  applicationReviewReport: string | null;
   ownedKnowledgeBase: KnowledgeBaseEntry[];
   pinnedIdeas: KnowledgeBaseEntry[];
   discoveredPriorArt: KnowledgeBaseEntry[];
+  priorArtLibrary: KnowledgeBaseEntry[];
   suggestedPortfolioEntries: SuggestedPortfolioEntry[];
   error: string | null;
   success: string | null;
@@ -150,9 +154,13 @@ export type Action =
   | { type: 'DISMISS_ALL_SUGGESTIONS' }
   | { type: 'PIN_PRIOR_ART'; payload: string }
   | { type: 'GENERATE_REPORT_START' }
-  | { type: 'GENERATE_REPORT_SUCCESS'; payload: PatentAnalysisReport }
+  | { type: 'GENERATE_REPORT_SUCCESS'; payload: { report: PatentAnalysisReport; priorArt: KnowledgeBaseEntry[] } }
+  | { type: 'UPDATE_REPORT_CONTENT'; payload: string }
   | { type: 'GENERATE_APP_START' }
-  | { type: 'GENERATE_APP_SUCCESS'; payload: PatentApplication }
+  | { type: 'REFINE_APP_START' }
+  | { type: 'REVIEW_APP_START' }
+  | { type: 'GENERATE_APP_SUCCESS'; payload: { application: PatentApplication; reviewReport: string } }
+  | { type: 'REFINE_APP_SUCCESS'; payload: { refinedApplication: PatentApplication; newReviewReport: string } }
   | { type: 'START_NEW_ANALYSIS' }
   | { type: 'START_NEW_DRAFT' }
   | { type: 'REMOVE_KB_ENTRY'; payload: string }
@@ -161,9 +169,14 @@ export type Action =
   | { type: 'ADD_KB_ENTRY'; payload: KnowledgeBaseEntry }
   | { type: 'UPDATE_KB_ENTRY'; payload: KnowledgeBaseEntry }
   | { type: 'INITIALIZE_PINNED_IDEAS'; payload: KnowledgeBaseEntry[] }
+  | { type: 'ADD_PINNED_IDEA'; payload: KnowledgeBaseEntry }
   | { type: 'REMOVE_PINNED_IDEA'; payload: string }
   | { type: 'UPDATE_PINNED_IDEA'; payload: KnowledgeBaseEntry }
   | { type: 'IMPORT_PINNED_IDEAS_SUCCESS'; payload: KnowledgeBaseUpdateResult }
+  | { type: 'INITIALIZE_PRIOR_ART_LIBRARY'; payload: KnowledgeBaseEntry[] }
+  | { type: 'REMOVE_PRIOR_ART_LIBRARY_ENTRY'; payload: string }
+  | { type: 'UPDATE_PRIOR_ART_LIBRARY_ENTRY'; payload: KnowledgeBaseEntry }
+  | { type: 'IMPORT_PRIOR_ART_LIBRARY_SUCCESS'; payload: KnowledgeBaseUpdateResult }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_ASYNC_ERROR'; payload: unknown }
   | { type: 'SET_SUCCESS'; payload: string | null }
