@@ -1,0 +1,6 @@
+{
+  "name": "Patent & Prior Art Analyzer",
+  "description": "Upload invention documents to conduct an international patent and prior art search using Gemini. Generates a comprehensive patentability report in Markdown.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
