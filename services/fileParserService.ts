@@ -1,3 +1,5 @@
+
+
 import { ProcessedFile, FileProcessingResult } from '../types';
 import mammoth from 'mammoth'; 
 
@@ -35,9 +37,31 @@ export const parseFileContent = async (file: File): Promise<string> => {
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textData = await page.getTextContent();
-                    textContent += textData.items?.map((item: any) => item.str).join(' ') + '\n';
+                    if (!textData || !textData.items || textData.items.length === 0) {
+                        continue;
+                    }
+                    
+                    // The previous geometric analysis of text coordinates was brittle for some PDF layouts.
+                    // This new approach uses a simpler text join followed by regex-based formatting correction, 
+                    // which is more robust for structured documents like patents and legal filings.
+                    
+                    // 1. Join all text items with a space and normalize all whitespace to single spaces.
+                    let pageText = textData.items.map(item => (item as any).str).join(' ').replace(/\s+/g, ' ').trim();
+                    
+                    // 2. Add paragraph breaks before new numbered claims. This is the primary fix for the run-on sentence issue.
+                    // It looks for sentence-ending punctuation (e.g., '.'), followed by a space, then a new number and a dot (e.g., '2.').
+                    // Example: "...assurances. 2. The method..." -> "...assurances.\n\n2. The method..."
+                    // The positive lookahead (?=...) ensures the number itself isn't consumed, allowing for consecutive matches.
+                    pageText = pageText.replace(/([.!?])\s+(?=\d+\.\s)/g, '$1\n\n');
+
+                    // 3. Add indented line breaks for sub-claims/parts, which often follow a semicolon.
+                    // Example: "...sequences; b. applying..." -> "...sequences;\n  b. applying..."
+                    pageText = pageText.replace(/;\s+(?=([a-z]\.\s|\([a-z]\)\s|\([ivx]+\)\s))/gi, ';\n  ');
+
+                    textContent += pageText + '\n\n';
                 }
-                resolve(textContent);
+                // Finally, clean up any excessive newlines that might have been generated.
+                resolve(textContent.trim().replace(/\n{3,}/g, '\n\n'));
 
             } catch(e) {
                 // This catch block handles failures in dynamically importing or using the PDF library

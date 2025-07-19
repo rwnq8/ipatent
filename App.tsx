@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 import { FileUpload } from './components/FileUpload';
 import { PatentApplicationDisplay } from './components/PatentApplicationDisplay';
@@ -9,7 +11,6 @@ import { KnowledgeBase } from './components/KnowledgeBase';
 import { PortfolioSuggestions } from './components/PortfolioSuggestions';
 import { useAppManager } from './hooks/useAppManager';
 import { InventionSelection } from './components/InventionSelection';
-import { BestPracticesGuide } from './components/BestPracticesGuide';
 
 const IS_API_KEY_CONFIGURED = !!process.env.API_KEY;
 
@@ -39,8 +40,6 @@ export function App() {
         
         <FileUpload onFilesSelected={manager.handleFilesSelected} processing={manager.isLoading} />
         
-        <BestPracticesGuide />
-
         <PortfolioSuggestions
           suggestions={manager.suggestedPortfolioEntries}
           onAccept={manager.handleAcceptSuggestion}
@@ -71,6 +70,7 @@ export function App() {
         {manager.status === 'inventionsReadyForSelection' && manager.extractedInventions && (
           <InventionSelection
             inventions={manager.extractedInventions}
+            selectedInvention={manager.selectedInvention}
             onSelectInvention={manager.handleInventionSelection}
             disabled={manager.isLoading}
           />

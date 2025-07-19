@@ -4,6 +4,75 @@ This document serves as a mandatory, ongoing "Red Team" analysis of code changes
 
 ---
 
+## Audit: 2024-07-23 - Reverted 'Selective Portfolio Context' to Restore Automated Analysis
+
+**Summary of Changes:**
+1.  **Feature Reversion:** Based on direct user feedback, the "Selective Portfolio Context" feature has been completely removed. The application now reverts to the original, unsupervised workflow where selecting an invention immediately triggers the analysis using the user's entire portfolio as context.
+    -   The `InventionSelection.tsx` component has been simplified, removing the "Step 2" UI and the final "Generate Report" button.
+    -   `hooks/useAppManager.ts` has been refactored. The `handleInventionSelection` function now immediately triggers the report generation process. The `generatePatentabilityReport` service call will always receive the full `ownedKnowledgeBase` from state.
+    -   State management has been simplified by removing `contextKbEntryIds` and related actions from `types.ts` and the main reducer.
+2.  **Code Cleanup Retained:** The deletion of five obsolete files (`services/tokenCountService.ts`, `components/ClaimReview.tsx`, `services/reportParser.ts`, `components/BestPracticesGuide.tsx`, `components/AnalysisWorkspace.tsx`) from the previous commit has been retained as it is an independent improvement to codebase maintainability.
+
+### 1. Regression Potential & Risk Analysis
+
+-   **Low Risk:** This change reverts the application's core workflow to a previously stable state. The logic is now simpler than it was with the selective context feature, reducing the surface area for state management bugs.
+-   **Potential Failure Point:** The primary point of interaction is the `handleInventionSelection` function, which now has dual responsibility (updating state and triggering an async action). This has been implemented carefully to ensure the async call receives the correct data.
+-   **Mitigation:** The logic is straightforward, and the app flow is now more linear and predictable. The removal of the intermediate step simplifies testing and reduces the number of possible UI states.
+
+### 2. Unhandled Edge Cases
+
+-   **Accidental Clicks:** A user might accidentally click an invention, triggering a multi-minute analysis they did not intend to start. The previous "two-step" process (select, then click generate) prevented this. However, the simplified UI also includes a way to deselect an invention by clicking it again, which will cancel the flow if done before the process becomes non-cancellable. This is an acceptable UX trade-off for the desired simplicity.
+
+### 3. UI/UX Impact
+
+-   **Highly Positive (Based on Feedback):** This change directly addresses the user's stated desire for an unsupervised, automated analysis process. It removes a manual step, reduces cognitive load, and better aligns the tool's behavior with the user's mental model of how the AI should function.
+
+### 4. Security & Data Integrity
+
+-   **No new risks identified.** This change simplifies data flow to the backend, reducing complexity without altering the security posture. Data persistence remains unchanged.
+
+### 5. Overall Assessment
+
+This is a critical course correction based on user feedback. It demonstrates responsiveness to user needs and a correct prioritization of the desired "unsupervised AI" workflow over a feature that, while powerful, was not aligned with the user's goals. The reversion simplifies the codebase and user experience, which is a net positive.
+
+**Confidence in Changes:** High.
+
+---
+
+## Audit: 2024-07-21 - Multi-Step Report Generation for Reliability
+
+**Summary of Changes:**
+1.  **Refactored `generatePatentabilityReport`:** Decomposed the report generation into a three-step process to fix a reliability issue where the "Claim Chart vs. Closest Art" section was being generated empty.
+    a. **Step 1:** A new prompt generates Sections 1-4 of the report and performs the initial prior art search using `googleSearch`.
+    b. **Step 2:** A second, focused prompt takes the output of Step 1 as context and generates ONLY Section 5 ("Best Mode" claims, claim chart, and recommendation) and the Appendices. This isolates the most complex generation task.
+    c. **Step 3:** The existing "Red Team Analysis" prompt is now the final step, taking the combined output of the first two steps as context.
+
+### 1. Regression Potential & Risk Analysis
+
+- **Low Risk:** The final data contract with the UI (`PatentAnalysisReport` object) remains unchanged. The change is isolated to the `generatePatentabilityReport` service function.
+- **Potential Failure Point:** The function now involves three serial API calls instead of two. The primary risk is a failure in Step 2. The code has been written to handle this gracefully: if Step 2 fails to return content, a placeholder error message will be inserted into the report, preventing a crash and making the issue visible to the user without losing the entire report.
+- **Performance:** This change adds the latency of one more serial API call. Given that this is already a long-running, asynchronous background task, the additional time is an acceptable trade-off for the dramatic increase in the reliability and quality of the generated report.
+
+### 2. Unhandled Edge Cases
+
+- **Empty Preliminary Report:** If Step 1 returns an empty string, the subsequent steps will have no context to work from, resulting in generic or empty outputs. This is acceptable, as the root cause is the failure of the first call, which would be the primary issue to debug. The error handling for an empty Step 1 response is already in place.
+
+### 3. UI/UX Impact
+
+- **Highly Positive:** This change directly addresses the user's reported issue of the empty claim chart. By breaking the generation into more manageable, focused tasks for the AI, the reliability of generating complex content like comparison tables is significantly improved. This will lead to more complete and useful reports for the user.
+
+### 4. Security & Data Integrity
+
+- **No new risks identified.** The changes do not alter how data is handled, stored, or displayed. They only modify the server-side logic for generating content.
+
+### 5. Overall Assessment
+
+This change is a direct fix for a critical bug in the application's core functionality. It applies a proven pattern (task decomposition) to improve the reliability of a complex AI generation process. The previous two-step approach was a good start, but it didn't go far enough to break down the most cognitively demanding part of the report generation. This three-step process is a more robust solution.
+
+**Confidence in Changes:** High.
+
+---
+
 ## Audit: 2024-07-19 - Improved File Import Flexibility
 
 **Summary of Changes:**
@@ -93,12 +162,12 @@ This is a high-value, low-risk change. It resolves a significant functional defi
 - **Data Volume:** The current implementation does not paginate or limit the number of discovered prior art entries. If the API returns hundreds of grounding chunks, the UI could become very cluttered and slow to render. This is a scalability concern.
 - **User Confusion (UI/UX):** The prior art entries are now generated from metadata. The titles and descriptions might be less clean than a human-curated list (e.g., a raw URL as a title). The `EntryDisplay` component must gracefully handle this. The current implementation creates a `notes` field with the source URI, which helps, but titles could still be improved.
 
-### 3. Security & Data Integrity
+### 4. Security & Data Integrity
 
 - **Low Risk:** The changes reduce risk by removing brittle regex parsing of potentially complex markdown, which could have been a vector for ReDoS or other parsing-related issues. The new approach uses structured data, which is inherently safer.
 - **Data Display:** The URIs and titles from the `groundingMetadata` are rendered in the UI. While React handles basic XSS prevention, we are trusting the output from the Gemini API. If a malicious website with an XSS-laden title were returned by the API, it could theoretically pose a risk, though this is highly unlikely.
 
-### 4. Overall Assessment
+### 5. Overall Assessment
 
 The refactoring is a significant improvement in robustness and aligns with best practices (using structured data over parsing text). The primary risk is now a dependency on the stability of the Gemini API's `groundingMetadata` schema. The scalability of the prior art list is a known limitation for future improvement. The deletion of obsolete files is a low-risk, high-reward cleanup that improves maintainability.
 

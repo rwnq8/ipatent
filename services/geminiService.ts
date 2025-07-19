@@ -1,4 +1,6 @@
 
+
+
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { GEMINI_MODEL_TEXT } from '../constants';
 import { ProcessedFile, PatentApplication, KnowledgeBaseEntry, SuggestedPortfolioEntry, ExtractedInvention, GeneratedFigure, PatentAnalysisReport } from "../types";
@@ -88,7 +90,9 @@ Return your findings as a single JSON array, where each object in the array repr
 If a document does not appear to be patent-related or is part of an already identified application, do not create a separate entry for it.
 If no patent-related documents are found at all, return an empty array [].
 
-Your entire response must be ONLY the JSON array. All string values within the JSON, especially for titles, claims, and embodiments, must be properly escaped to handle special characters like quotes (") and backslashes (\\). Do not include any other text, explanations, or markdown fences.
+Your entire response must be ONLY the JSON array. Do not include any other text, explanations, or markdown fences.
+
+CRITICAL: All string values within the JSON must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.
 
 --- BATCH OF DOCUMENTS ---
 ${fileContentBlock}
@@ -194,7 +198,8 @@ ${fileContentBlock}
 
     } catch (error) {
         console.error("Error calling Gemini API for batch metadata extraction:", error);
-        return [];
+        const originalMessage = (error instanceof Error) ? error.message : String(error);
+        throw new Error(`Failed to parse patent metadata from documents. The AI may have returned a malformed response. Details: ${originalMessage}`);
     }
 };
 
@@ -208,7 +213,7 @@ export const extractInventions = async (processedFiles: ProcessedFile[]): Promis
 
     const prompt = `You are an expert patent analyst. Your task is to dissect the provided documents to identify distinct inventions.
 
-Analyze the following batch of documents. Assume by default that all content pertains to a single invention unless there are clear, unambiguous indicators of separate, unrelated inventions (e.g., completely different technical fields).
+Analyze the following batch of documents. Each document is separated by "--- DOCUMENT: [filename] ---". You MUST identify all unique inventions. If two documents describe completely different technologies (e.g., one about quantum security, one about machine learning resource allocation), they are two separate inventions.
 
 For each distinct invention you identify, you must:
 1.  Generate a concise title for the invention.
@@ -216,8 +221,11 @@ For each distinct invention you identify, you must:
 3.  Extract two types of claims:
     a.  **'explicit' claims:** These are formally numbered claims found verbatim in a "CLAIMS" section of the documents.
     b.  **'inferred' claims:** This is critical. Scour the entire text (abstract, summary, detailed description, embodiments) for sentences or phrases that describe a specific feature, function, component, process, or advantage that could be formulated into a formal claim later. Be exhaustive. This is about capturing every potentially patentable idea.
+4.  **CRITICAL:** List the exact filenames of all source documents that contributed information to this invention.
 
 Return your findings as a single JSON array of "invention" objects. The entire response must be ONLY this JSON array, with no other text, explanations, or markdown fences.
+
+CRITICAL: All string values within the JSON must be properly escaped. For example, if a claim's text is 'The system of claim 1, wherein the "widget" is blue.', the corresponding JSON string value must be "The system of claim 1, wherein the \\"widget\\" is blue.". This escaping is non-negotiable for the output to be valid.
 
 --- BATCH OF DOCUMENTS ---
 ${fileContentBlock}
@@ -243,8 +251,13 @@ ${fileContentBlock}
             description: "An array of all explicit and inferred claims for this invention.",
             items: claimsSchema,
         },
+        sourceFilenames: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "An array of filenames that are the source for this invention."
+        }
       },
-      required: ['title', 'description', 'claims'],
+      required: ['title', 'description', 'claims', 'sourceFilenames'],
     };
 
     const responseSchema = {
@@ -279,16 +292,30 @@ ${fileContentBlock}
             throw new Error("Parsed data for invention extraction is not an array.");
         }
 
-        return parsedData.map(item => ({
-            title: item.title || "Untitled Invention",
-            description: item.description || "No description provided.",
-            claims: Array.isArray(item.claims) ? item.claims.map((claim: any) => ({
-                text: claim.text || "Invalid claim text",
-                type: (claim.type === 'explicit' || claim.type === 'inferred') ? claim.type : 'inferred',
-                selected: true,
-            })) : [],
-            sourceContent: fileContentBlock, // Pass the full context along
-        }));
+        const filesByName = new Map(processedFiles.map(f => [f.name, f]));
+
+        return parsedData.map(item => {
+            const sourceFilenames = Array.isArray(item.sourceFilenames) ? item.sourceFilenames : [];
+            const relevantFiles = sourceFilenames
+                .map((filename: string) => filesByName.get(filename))
+                .filter((file): file is ProcessedFile => !!file);
+            
+            // If mapping fails, the content will be empty, preventing context bleed from other files.
+            const relevantContent = relevantFiles.map(file => 
+                `--- DOCUMENT: ${file.name} ---\n${sanitizeForApi(file.content)}`
+            ).join('\n\n');
+
+            return {
+                title: item.title || "Untitled Invention",
+                description: item.description || "No description provided.",
+                claims: Array.isArray(item.claims) ? item.claims.map((claim: any) => ({
+                    text: claim.text || "Invalid claim text",
+                    type: (claim.type === 'explicit' || claim.type === 'inferred') ? claim.type : 'inferred',
+                    selected: true,
+                })) : [],
+                sourceContent: relevantContent, // Use the filtered content now
+            };
+        });
 
     } catch (error) {
         console.error("Error calling Gemini API for invention extraction:", error);
@@ -304,12 +331,7 @@ export const generatePatentabilityReport = async (
   if (!invention) throw new Error("Invention data is required.");
 
   const bestPracticesGuide = await getBestPracticesGuideContent();
-
-  const prompt = `
-**Role:** You are a world-class patent attorney and prior art specialist with deep expertise in technology and global patent law, as detailed in the provided "Global Patent Playbook".
-
-**Mission:** Generate a comprehensive, client-ready "Patentability & Prior Art Analysis Report" in Markdown format for the invention detailed below. Your analysis must be thorough, strategic, and grounded in the principles of the playbook. You must use Google Search to find relevant prior art.
-
+  const baseContext = `
 **Context: Invention to Analyze**
 - **Title:** ${invention.title}
 - **Description:** ${invention.description}
@@ -318,11 +340,19 @@ ${invention.claims.map(c => `- (${c.type}) ${c.text}`).join('\n')}
 
 **Context: User's Existing IP Portfolio (for context ONLY, NOT prior art)**
 ${formatKnowledgeBaseForPrompt(knowledgeBase)}
+`;
 
+  // --- Step 1: Generate the preliminary report (Sections 1-4) ---
+  const preliminaryReportPrompt = `
+**Role:** You are a world-class patent attorney and prior art specialist with deep expertise in technology and global patent law, as detailed in the provided "Global Patent Playbook".
+
+**Mission:** Generate the first part of a "Patentability & Prior Art Analysis Report" in Markdown format for the invention detailed below. Your analysis must be thorough, strategic, and grounded in the principles of the playbook. You must use Google Search to find relevant prior art.
+
+${baseContext}
 ---
 **TASK & OUTPUT INSTRUCTIONS**
 
-Your entire output MUST be a single Markdown document. You must generate content for ALL the following sections in the specified order.
+Your entire output MUST be a single Markdown document. You must generate content for Sections 1 through 4 ONLY. Do not generate Section 5 or beyond. STOP after you have finished writing Section 4.
 
 ---
 # Patentability & Prior Art Analysis Report for: "${invention.title}"
@@ -347,37 +377,11 @@ Your entire output MUST be a single Markdown document. You must generate content
 - Based on the prior art, provide concrete advice on claim strategy.
 - Which claim elements could be broadened without hitting prior art?
 - Which claims need to be narrowed with additional specific limitations to ensure patentability? Provide examples.
-
-## Section 5: "Best Mode" Claim Set & Go/No-Go Assessment
-
-### A. "Best Mode" Revised Claims
-- Draft a new, revised set of 3-5 claims that you believe represent the strongest, most defensible version of this invention. These should incorporate the strategies from Section 4.
-
-### B. Claim Chart vs. Closest Art
-- Create a simple markdown table comparing your top revised independent claim against the single closest prior art reference you found.
-
-### C. Strategic Go/No-Go Recommendation
-- Provide a final, clear recommendation. Should the client proceed with a patent application?
-- Justify your recommendation based on the expected scope of protection, the difficulty of prosecution, and the commercial landscape. Grade your confidence (e.g., High Confidence GO, Cautious GO, NO-GO).
-
---- APPENDICES ---
-
-## Appendix A: Detailed Prior Art & FTO Analysis
-- (This section is for detailed breakdown of references and is not required in this generation pass)
-- You may leave this section with a placeholder message like "Detailed FTO analysis not performed."
-
-## Red Team Analysis: A Mandatory Self-Critique
-- **CRITICAL:** In this section, you must challenge your own conclusions.
-- What are the weakest points in your analysis? What assumptions did you make?
-- If an opposing counsel were to attack this report, which arguments would they use?
-- What's the most likely reason a patent office would reject your "Best Mode" claims?
-- This section demonstrates intellectual honesty and is non-negotiable.
----
 `;
 
-  const response = await ai.models.generateContent({
+  const preliminaryReportResponse = await ai.models.generateContent({
     model: GEMINI_MODEL_TEXT,
-    contents: prompt,
+    contents: preliminaryReportPrompt,
     config: {
       systemInstruction: bestPracticesGuide,
       temperature: 0.4,
@@ -385,12 +389,106 @@ Your entire output MUST be a single Markdown document. You must generate content
     },
   });
 
+  const preliminaryReportContent = preliminaryReportResponse.text;
+  const groundingMetadata = {
+    groundingChunks: preliminaryReportResponse.candidates?.[0]?.groundingMetadata?.groundingChunks,
+    webSearchQueries: preliminaryReportResponse.candidates?.[0]?.groundingMetadata?.webSearchQueries,
+  };
+  
+  if (!preliminaryReportContent) {
+    throw new Error("The preliminary report generation (Sections 1-4) failed and returned no content.");
+  }
+
+  // --- Step 2: Generate the concluding sections (Section 5) ---
+  const section5Prompt = `
+**Role:** You are a world-class patent attorney, and you are continuing your work on a patentability report.
+
+**Mission:** Generate ONLY Section 5 of the "Patentability & Prior Art Analysis Report" and the Appendices section. This is a highly focused task to draft the final claims, create a comparison chart, and provide a strategic recommendation based on the previously completed analysis.
+
+**Full Context from Prior Sections (for your reference):**
+\`\`\`markdown
+${preliminaryReportContent}
+\`\`\`
+
+---
+**TASK & OUTPUT INSTRUCTIONS**
+
+Your entire output must be ONLY the markdown for Section 5 and the Appendices section. Do not repeat the title or Sections 1-4.
+
+## Section 5: "Best Mode" Claim Set & Go/No-Go Assessment
+
+### A. "Best Mode" Revised Claims
+- Draft a new, revised set of 3-5 claims that you believe represent the strongest, most defensible version of this invention based on the analysis in the context provided.
+
+### B. Claim Chart vs. Closest Art
+- **CRITICAL:** Create a complete, detailed markdown table comparing your top revised independent claim against the single closest prior art reference identified in the context. Break the claim into its essential features for the comparison.
+
+### C. Strategic Go/No-Go Recommendation
+- Provide a final, clear recommendation (e.g., High Confidence GO, Cautious GO, NO-GO).
+- Justify your recommendation based on the expected scope of protection, the difficulty of prosecution, and the commercial landscape.
+
+--- APPENDICES ---
+
+## Appendix A: Detailed Prior Art & FTO Analysis
+- You may leave this section with a placeholder message like "Detailed FTO analysis not performed."
+`;
+  
+  const section5Response = await ai.models.generateContent({
+      model: GEMINI_MODEL_TEXT,
+      contents: section5Prompt,
+      config: {
+          systemInstruction: bestPracticesGuide,
+          temperature: 0.3, 
+      },
+  });
+
+  let section5Content = section5Response.text;
+  if (!section5Content) {
+      // Gracefully handle failure of this step
+      section5Content = `\n\n## Section 5: "Best Mode" Claim Set & Go/No-Go Assessment\n\n[ERROR: The AI failed to generate this section.]`;
+  }
+
+  const mainReportContent = `${preliminaryReportContent.trim()}\n\n${section5Content.trim()}`;
+
+  // --- Step 3: Generate the Red Team Analysis ---
+  const redTeamPrompt = `
+**Role:** You are a skeptical "Red Team" patent attorney. Your sole purpose is to find the weaknesses and unstated assumptions in the following patentability report prepared by your colleague. Your critique must be sharp, insightful, and constructive.
+
+**Mission:** Generate ONLY the "Red Team Analysis" markdown section. Follow the structure below exactly.
+
+**Report to Analyze:**
+\`\`\`markdown
+${mainReportContent}
+\`\`\`
+
+---
+**TASK & OUTPUT INSTRUCTIONS**
+
+Your entire output must be ONLY the markdown for the "Red Team Analysis" section. Do not include any other text or explanation.
+
+## Red Team Analysis: A Mandatory Self-Critique
+- **CRITICAL:** What are the weakest points in the analysis provided above? What unstated assumptions were made?
+- If an opposing counsel were to attack this report, which specific arguments would they use?
+- What's the most likely reason a patent office would reject the proposed "Best Mode" claims?
+- This section demonstrates intellectual honesty and is non-negotiable.
+`;
+
+  const redTeamResponse = await ai.models.generateContent({
+      model: GEMINI_MODEL_TEXT,
+      contents: redTeamPrompt,
+      config: {
+          systemInstruction: bestPracticesGuide,
+          temperature: 0.5,
+      },
+  });
+
+  const redTeamContent = redTeamResponse.text;
+
+  const finalMarkdownContent = `${mainReportContent}\n\n${redTeamContent || '## Red Team Analysis: A Mandatory Self-Critique\n\n[ERROR: The AI failed to generate the Red Team self-critique section.]'}`;
+
   return {
-    markdownContent: response.text,
-    groundingMetadata: {
-      groundingChunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks,
-      webSearchQueries: response.candidates?.[0]?.groundingMetadata?.webSearchQueries,
-    }
+    markdownContent: finalMarkdownContent,
+    groundingMetadata: groundingMetadata,
   };
 };
 
@@ -558,6 +656,8 @@ const generateSection = async (prompt: string, schema: any, systemInstruction: s
 
 /**
  * Takes a block of text and programmatically prepends USPTO-compliant paragraph numbers.
+ * This version robustly splits text into paragraphs (not just lines) and strips any
+ * existing paragraph numbers to ensure correct, sequential numbering.
  * @param text The block of text for a section (e.g., Background).
  * @param startNum The starting paragraph number.
  * @returns An object containing the numbered text and the next available paragraph number.
@@ -565,22 +665,30 @@ const generateSection = async (prompt: string, schema: any, systemInstruction: s
 const addParagraphNumbers = (text: string, startNum: number): { numberedText: string; nextNum: number } => {
     if (!text || !text.trim()) return { numberedText: text, nextNum: startNum };
     let currentNum = startNum;
-    const lines = text.split('\n');
-    const numberedLines = lines.map(line => {
-        const trimmedLine = line.trim();
-        // Add number only to non-empty lines that are not headings, lists, or already numbered.
-        const isHeading = trimmedLine.startsWith('#');
-        const isAlreadyNumbered = trimmedLine.startsWith('[');
-        // Basic check for list items. More complex lists may not be caught but this handles common cases.
-        const isListItem = /^\s*(\*|-|\d+\.)\s+/.test(line);
 
-        if (trimmedLine.length > 0 && !isHeading && !isAlreadyNumbered && !isListItem) {
+    // Split text into paragraphs based on two or more newlines.
+    // Filter out any empty strings that result from the split.
+    const paragraphs = text.split(/\n{2,}/).filter(p => p.trim().length > 0);
+
+    const numberedParagraphs = paragraphs.map(para => {
+        // Check conditions on the paragraph.
+        const isHeading = para.startsWith('#');
+        const isListItem = /^\s*(\*|-|\d+\.)\s+/.test(para);
+        
+        // Aggressively strip any existing paragraph numbers like [0001] from the start.
+        const cleanPara = para.replace(/^\[\d{4,}\]\s*/, '');
+        
+        // Don't number headings or list items.
+        if (!isHeading && !isListItem) {
             const paraNum = `[${String(currentNum++).padStart(4, '0')}]`;
-            return `${paraNum} ${line}`;
+            return `${paraNum} ${cleanPara}`;
         }
-        return line;
+        // Return the paragraph as is (with numbering stripped if it was a heading/list that had it)
+        return cleanPara;
     });
-    return { numberedText: numberedLines.join('\n'), nextNum: currentNum };
+    
+    // Join with double newlines to preserve paragraph separation.
+    return { numberedText: numberedParagraphs.join('\n\n'), nextNum: currentNum };
 };
 
 const getBestModeClaimsFromReport = (report: PatentAnalysisReport): string => {
@@ -704,7 +812,7 @@ ${report.markdownContent.substring(0, 150000)}
   const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. This is a provisional, so adopt a "kitchen sink" approach as described in the playbook. Be exhaustive. Describe every component, function, step, and all possible alternative embodiments from the source material to provide maximum support for future claims. Weave in concepts from any weak claims as speculative possibilities.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. This is a provisional, so adopt a "kitchen sink" approach as described in the playbook. Be exhaustive. Describe every component, function, step, and all possible alternative embodiments from the source material to provide maximum support for future claims. Weave in concepts from the "Best Mode" claims and report analysis throughout the description to ensure robust support.`, contentSchema, systemInstruction);
   const embodimentsContent = await generateSection(`Generate ONLY a numbered list of "EMBODIMENTS" that read like claims, based on the "Best Mode" claims from the report. Do not include a "CLAIMS" section heading.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const abstractContent = await generateSection(`Generate ONLY the "ABSTRACT OF THE DISCLOSURE" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
 

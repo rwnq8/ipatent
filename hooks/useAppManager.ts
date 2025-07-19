@@ -1,5 +1,7 @@
 
 
+
+
 import { useReducer, useCallback, useEffect } from 'react';
 import { processUploadedFiles } from '../services/fileParserService';
 import {
@@ -154,11 +156,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
         return { ...state, status: 'extractingInventions' };
     case 'EXTRACT_INVENTIONS_SUCCESS':
         return { ...state, status: 'inventionsReadyForSelection', extractedInventions: action.payload };
-    case 'SELECT_INVENTION': {
-        if (!state.extractedInventions) return state;
-        const selectedInvention = state.extractedInventions[action.payload] || null;
-        return { ...state, selectedInvention, status: 'generatingReport' };
-    }
+    case 'SELECT_INVENTION':
+        return {
+            ...state,
+            selectedInvention: action.payload,
+        };
     case 'SUGGESTIONS_READY':
         return { ...state, suggestedPortfolioEntries: action.payload };
     case 'ACCEPT_SUGGESTION': {
@@ -330,27 +332,27 @@ export const useAppManager = () => {
     processAndExtract();
     
   }, [state.uploadedFiles]);
-  
-  useEffect(() => {
-      if (state.status === 'generatingReport' && state.selectedInvention) {
-          const runReportGeneration = async () => {
-              try {
-                  const report = await generatePatentabilityReport(state.selectedInvention!, state.ownedKnowledgeBase);
-                  dispatch({ type: 'GENERATE_REPORT_SUCCESS', payload: report });
-              } catch (err) {
-                  dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
-              }
-          };
-          runReportGeneration();
+
+  const handleFilesSelected = useCallback((files: File[]) => dispatch({ type: 'SET_FILES', payload: files }), [dispatch]);
+
+  const handleGenerateReport = useCallback(async (inventionToAnalyze: ExtractedInvention) => {
+      dispatch({ type: 'GENERATE_REPORT_START' });
+      try {
+        // Reverted: Always use the full knowledge base for unsupervised context.
+        const report = await generatePatentabilityReport(inventionToAnalyze, state.ownedKnowledgeBase);
+        dispatch({ type: 'GENERATE_REPORT_SUCCESS', payload: report });
+      } catch (err) {
+        dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
       }
-  }, [state.status, state.selectedInvention, state.ownedKnowledgeBase]);
+  }, [state.ownedKnowledgeBase, dispatch]);
 
-
-  const handleFilesSelected = useCallback((files: File[]) => dispatch({ type: 'SET_FILES', payload: files }), []);
-
-  const handleInventionSelection = useCallback((index: number) => {
-    dispatch({ type: 'SELECT_INVENTION', payload: index });
-  }, []);
+  const handleInventionSelection = useCallback((invention: ExtractedInvention | null) => {
+    dispatch({ type: 'SELECT_INVENTION', payload: invention });
+    if (invention) {
+      // Immediately trigger the report generation upon selection.
+      handleGenerateReport(invention);
+    }
+  }, [dispatch, handleGenerateReport]);
 
   const handleGenerateApplication = useCallback(async (type: 'provisional' | 'non-provisional') => {
     if (!state.selectedInvention || !state.patentAnalysisReport) {
@@ -366,14 +368,14 @@ export const useAppManager = () => {
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
-  }, [state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase]);
+  }, [state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase, dispatch]);
 
   const startNewAnalysis = useCallback(() => {
     dispatch({ type: 'START_NEW_ANALYSIS' });
-  }, []);
+  }, [dispatch]);
 
-  const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), []);
-  const handleAddNewKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'ADD_KB_ENTRY', payload: entry }), []);
+  const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), [dispatch]);
+  const handleAddNewKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'ADD_KB_ENTRY', payload: entry }), [dispatch]);
   
   const handleExportKb = useCallback(() => {
     try {
@@ -392,7 +394,7 @@ export const useAppManager = () => {
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
-  }, []);
+  }, [dispatch]);
 
   const handleImportKb = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -410,15 +412,15 @@ export const useAppManager = () => {
       }
     };
     reader.readAsText(file);
-    event.target.value = '';
-  }, []);
+    (event.target as HTMLInputElement).value = '';
+  }, [dispatch]);
 
-  const handleUpdateKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_KB_ENTRY', payload: entry }), []);
+  const handleUpdateKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_KB_ENTRY', payload: entry }), [dispatch]);
   
   // --- Pinned Ideas Handlers ---
-  const handlePinPriorArt = useCallback((id: string) => dispatch({ type: 'PIN_PRIOR_ART', payload: id }), []);
-  const handleRemovePinnedIdea = useCallback((id: string) => dispatch({ type: 'REMOVE_PINNED_IDEA', payload: id }), []);
-  const handleUpdatePinnedIdea = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_PINNED_IDEA', payload: entry }), []);
+  const handlePinPriorArt = useCallback((id: string) => dispatch({ type: 'PIN_PRIOR_ART', payload: id }), [dispatch]);
+  const handleRemovePinnedIdea = useCallback((id: string) => dispatch({ type: 'REMOVE_PINNED_IDEA', payload: id }), [dispatch]);
+  const handleUpdatePinnedIdea = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_PINNED_IDEA', payload: entry }), [dispatch]);
 
   const handleExportPinnedIdeas = useCallback(() => {
     try {
@@ -437,7 +439,7 @@ export const useAppManager = () => {
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
-  }, []);
+  }, [dispatch]);
 
   const handleImportPinnedIdeas = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -455,12 +457,12 @@ export const useAppManager = () => {
       }
     };
     reader.readAsText(file);
-    event.target.value = '';
-  }, []);
+    (event.target as HTMLInputElement).value = '';
+  }, [dispatch]);
 
-  const handleAcceptSuggestion = useCallback((index: number) => dispatch({ type: 'ACCEPT_SUGGESTION', payload: index }), []);
-  const handleDismissSuggestion = useCallback((index: number) => dispatch({ type: 'DISMISS_SUGGESTION', payload: index }), []);
-  const handleDismissAllSuggestions = useCallback(() => dispatch({ type: 'DISMISS_ALL_SUGGESTIONS' }), []);
+  const handleAcceptSuggestion = useCallback((index: number) => dispatch({ type: 'ACCEPT_SUGGESTION', payload: index }), [dispatch]);
+  const handleDismissSuggestion = useCallback((index: number) => dispatch({ type: 'DISMISS_SUGGESTION', payload: index }), [dispatch]);
+  const handleDismissAllSuggestions = useCallback(() => dispatch({ type: 'DISMISS_ALL_SUGGESTIONS' }), [dispatch]);
   
   const getLoadingMessage = (status: AppState['status']): string => {
     switch (status) {
@@ -492,9 +494,9 @@ export const useAppManager = () => {
     selectedInvention: state.selectedInvention,
     
     // Setters
-    setApiKeyErrorDismissed: useCallback(() => dispatch({ type: 'DISMISS_API_KEY_ERROR' }), []),
-    setError: useCallback((message: string | null) => dispatch({ type: 'SET_ERROR', payload: message }), []),
-    setSuccess: useCallback((message: string | null) => dispatch({ type: 'SET_SUCCESS', payload: message }), []),
+    setApiKeyErrorDismissed: useCallback(() => dispatch({ type: 'DISMISS_API_KEY_ERROR' }), [dispatch]),
+    setError: useCallback((message: string | null) => dispatch({ type: 'SET_ERROR', payload: message }), [dispatch]),
+    setSuccess: useCallback((message: string | null) => dispatch({ type: 'SET_SUCCESS', payload: message }), [dispatch]),
     
     // Handlers
     handleFilesSelected,

@@ -1,5 +1,7 @@
 
 
+
+
 export interface ProcessedFile {
   id: string;
   name: string;
@@ -139,7 +141,7 @@ export type Action =
   | { type: 'PARSE_COMPLETE'; payload: { successfulFiles: ProcessedFile[], errors: { fileName: string; message: string }[] } }
   | { type: 'EXTRACT_INVENTIONS_START' }
   | { type: 'EXTRACT_INVENTIONS_SUCCESS'; payload: ExtractedInvention[] }
-  | { type: 'SELECT_INVENTION'; payload: number }
+  | { type: 'SELECT_INVENTION'; payload: ExtractedInvention | null }
   | { type: 'SUGGESTIONS_READY'; payload: SuggestedPortfolioEntry[] }
   | { type: 'ACCEPT_SUGGESTION'; payload: number }
   | { type: 'DISMISS_SUGGESTION'; payload: number }
