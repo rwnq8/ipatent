@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm'; // For GitHub Flavored Markdown (tables, etc.)
@@ -96,9 +94,8 @@ export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGener
   }
 
   const handleStartNewAnalysisClick = () => {
-    if (window.confirm('Are you sure you want to start a new analysis? The current report will be discarded.')) {
-      onStartNewAnalysis();
-    }
+    // This action discards the current report, so direct action is appropriate.
+    onStartNewAnalysis();
   };
   
   const handleEdit = () => {

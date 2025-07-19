@@ -70,6 +70,15 @@ export interface KnowledgeBaseUpdateResult {
   conflicts: string[];
 }
 
+/**
+ * Defines the structure for a full export/import of all user data.
+ */
+export interface FullKnowledgeBase {
+  portfolio: KnowledgeBaseEntry[];
+  priorArtLibrary: KnowledgeBaseEntry[];
+  pinnedIdeas: KnowledgeBaseEntry[];
+}
+
 
 // --- Types for unused components being fixed ---
 export interface GroundingChunk {

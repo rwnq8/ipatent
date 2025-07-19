@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse, Type } from "@google/ai";
+import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { GEMINI_MODEL_TEXT } from '../constants';
 import { ProcessedFile, PatentApplication, KnowledgeBaseEntry, SuggestedPortfolioEntry, ExtractedInvention, GeneratedFigure, PatentAnalysisReport } from "../types";
 import { sanitizeForApi } from "./utils";
@@ -583,7 +583,7 @@ Your entire output must be ONLY the markdown for the "Red Team Analysis" section
 
 ### 1. Key Enablement & Written Description Risks (§112)
 - Identify any claim terms that may lack clear antecedent basis in the specification.
-- Pinpoint specific claims or features that a Person Having Ordinary Skill In the Art (PHOSITA) might argue require undue experimentation to implement, given the level of detail in the disclosure.
+- Pinpoint specific claims or features that a Person Having Ordinary Skill In the Art (a "PHOSITA") might argue require undue experimentation to implement, given the level of detail in the disclosure.
 
 ### 2. Opposing Counsel's Core Attack Arguments
 - Formulate the 2-3 strongest arguments an opposing counsel would use to challenge the validity of the "Best Mode Revised Claims" during litigation or post-grant proceedings.
@@ -625,17 +625,24 @@ const formatKnowledgeBaseForPrompt = (kb: KnowledgeBaseEntry[], entryTypeName: s
   if (!kb || kb.length === 0) {
     return `The user has not provided any "${entryTypeName}" entries.`;
   }
-  const MAX_KB_ENTRY_CONTENT_LENGTH = 15000;
-  return `\n--- START ${entryTypeName.toUpperCase()} LIST ---\n${kb.map(entry => `
+  const MAX_SUMMARY_LENGTH = 1000;
+  return `\n--- START ${entryTypeName.toUpperCase()} LIST ---\n${kb.map(entry => {
+      // Create a more concise summary instead of dumping raw content
+      const claimsSummary = (entry.extractedClaims || []).length > 0 ? ` Key Claims: "${entry.extractedClaims.slice(0, 2).join('"; "')}"` : '';
+      const embodimentsSummary = (entry.extractedEmbodiments || []).length > 0 ? ` Key Embodiments: "${entry.extractedEmbodiments.slice(0, 2).join('"; "')}"` : '';
+      const notesSummary = (entry.notes || '').substring(0, 400); // Snippet of notes
+      
+      const summaryParts = [notesSummary, claimsSummary, embodimentsSummary].filter(Boolean);
+      const fullSummary = summaryParts.join(' | ');
+
+      return `
 **${entryTypeName}: "${entry.title}"**
 - Application Number: ${entry.applicationNumber}
 - Filing Date: ${entry.filingDate}
 - Type: ${entry.type}
-- Content Snippet / Notes:
-\`\`\`text
-${sanitizeForApi(entry.notes || entry.files[0]?.content || 'Content not available.').substring(0, MAX_KB_ENTRY_CONTENT_LENGTH)}
-\`\`\`
-`).join('\n---\n')}\n--- END ${entryTypeName.toUpperCase()} LIST ---\n`;
+- Summary: ${sanitizeForApi(fullSummary).substring(0, MAX_SUMMARY_LENGTH)}
+`;
+  }).join('\n---\n')}\n--- END ${entryTypeName.toUpperCase()} LIST ---\n`;
 };
 
 
@@ -862,7 +869,7 @@ const getBestModeClaimsFromReport = (report: PatentAnalysisReport): string => {
     return claimsSection;
 };
 
-export const generateNonProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport, knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
+export const generateNonProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport): Promise<PatentApplication> => {
   if (!ai) throw new Error("Gemini API client is not initialized. Check API Key configuration.");
   if (!invention || !report) throw new Error("Invention and report data are required.");
 
@@ -871,10 +878,16 @@ export const generateNonProvisionalPatentApplication = async (invention: Extract
 
   const basePromptContext = `
 **Source Invention Full Disclosure:**
-${invention.sourceContent.substring(0, 150000)}
+This is the primary source of truth. Your entire output must be derived from and expand upon the details within this section.
+\`\`\`
+${invention.sourceContent.substring(0, 200000)}
+\`\`\`
 
-**Analysis Report Summary & Best Mode Claims to build upon:**
+**Analysis Report & Strategic Guidance:**
+The following report analyzes the invention and contains strategic advice. Use it to guide the narrative, focus, and structure of the application draft. Your draft must focus EXCLUSIVELY on the invention described in the "Source Invention Full Disclosure", guided by the strategic recommendations in the other sections.
+\`\`\`
 ${report.markdownContent.substring(0, 150000)}
+\`\`\`
 `;
 
   const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **non-provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided. **CRITICAL:** You MUST generate the full, complete text for the requested section. Do NOT use placeholder text such as "[Insert details here]". CRITICAL: Your response MUST NOT include the section title itself in the content. The title will be added programmatically. **Crucial Constraint on Factual Accuracy:** You must only use information explicitly provided in the source documents and analysis report. Do NOT invent new technical terms, expand acronyms unless the expansion is provided in the source text, or add technical details not supported by the context. Stick strictly to the provided information to avoid introducing factual errors (hallucinations).`;
@@ -1014,7 +1027,7 @@ ${basePromptContext}`;
     }
 };
 
-export const generateProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport, knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
+export const generateProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport): Promise<PatentApplication> => {
     if (!ai) throw new Error("Gemini API client is not initialized.");
     if (!invention || !report) throw new Error("Invention and report data are required.");
 
@@ -1027,8 +1040,8 @@ This is the primary source of truth. Your entire output must be derived from and
 ${invention.sourceContent.substring(0, 200000)}
 \`\`\`
 
-**Analysis Report Summary & Best Mode Claims:**
-This report provides strategic context and a refined articulation of the invention's core concepts. Use it to guide the narrative, focus, and structure of the application draft.
+**Analysis Report & Strategic Guidance:**
+The following report analyzes the invention and contains strategic advice. Use it to guide the narrative, focus, and structure of the application draft.
 \`\`\`
 ${report.markdownContent.substring(0, 150000)}
 \`\`\`

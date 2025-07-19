@@ -1,17 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { useReducer, useCallback, useEffect } from 'react';
 import { processUploadedFiles } from '../services/fileParserService';
 import {
@@ -27,20 +13,16 @@ import {
 import {
   getKnowledgeBase,
   removeKnowledgeBaseEntry,
-  exportKnowledgeBase,
-  importKnowledgeBase,
   saveKnowledgeBase,
   getPinnedIdeas,
   savePinnedIdeas,
   removePinnedIdea,
-  exportPinnedIdeas,
-  importPinnedIdeas,
   addPinnedIdea,
   getPriorArtLibrary,
   savePriorArtLibrary,
   removePriorArtLibraryEntry,
-  exportPriorArtLibrary,
-  importPriorArtLibrary,
+  exportFullKnowledgeBase,
+  importFullKnowledgeBase,
 } from '../services/knowledgeBaseService';
 import { sanitizeMessage, normalizeApplicationNumber, sanitizeForFilename } from '../services/utils';
 import { AppState, Action, KnowledgeBaseEntry, KnowledgeBaseUpdateResult, PatentAnalysisReport, ExtractedInvention, PatentApplication } from '../types';
@@ -122,6 +104,26 @@ const mergeEntryIntoKb = (kb: KnowledgeBaseEntry[], entryToAdd: KnowledgeBaseEnt
         successMsg = `Entry "${newEntry.title}" added to portfolio.`;
     }
     return { updatedKb, successMsg };
+};
+
+const stripPriorArtFromReport = (markdownContent: string): string => {
+    if (!markdownContent) return '';
+    let cleanedContent = markdownContent;
+
+    const section2StartMarker = '## Section 2: Prior Art Search & Analysis';
+    const section3StartMarker = '## Section 3: Strategic Landscape & Opportunities';
+
+    const startIndex = cleanedContent.indexOf(section2StartMarker);
+    if (startIndex !== -1) {
+        const endIndex = cleanedContent.indexOf(section3StartMarker, startIndex);
+        
+        if (endIndex !== -1) {
+            cleanedContent = cleanedContent.substring(0, startIndex) + cleanedContent.substring(endIndex);
+        } else {
+            cleanedContent = cleanedContent.substring(0, startIndex);
+        }
+    }
+    return cleanedContent.trim();
 };
 
 
@@ -419,7 +421,14 @@ export const useAppManager = () => {
     dispatch({ type: 'GENERATE_APP_START' });
     try {
       const generator = type === 'provisional' ? generateProvisionalPatentApplication : generateNonProvisionalPatentApplication;
-      const application = await generator(state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase);
+      
+      // CRITICAL FIX: Create a cleaned version of the report without prior art to avoid context leakage.
+      const cleanedReportForDrafting: PatentAnalysisReport = {
+          ...state.patentAnalysisReport,
+          markdownContent: stripPriorArtFromReport(state.patentAnalysisReport.markdownContent),
+      };
+
+      const application = await generator(state.selectedInvention, cleanedReportForDrafting);
       
       dispatch({ type: 'REVIEW_APP_START' });
       
@@ -430,7 +439,7 @@ export const useAppManager = () => {
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
-  }, [state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase, dispatch]);
+  }, [state.selectedInvention, state.patentAnalysisReport, dispatch]);
 
   const handleRefineApplication = useCallback(async () => {
     if (!state.patentApplication || !state.applicationReviewReport) {
@@ -462,52 +471,6 @@ export const useAppManager = () => {
   const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), [dispatch]);
   const handleAddNewKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'ADD_KB_ENTRY', payload: entry }), [dispatch]);
   
-  const handleExportKb = useCallback(() => {
-    try {
-      const jsonString = exportKnowledgeBase();
-      const blob = new Blob([jsonString], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `patent_portfolio_knowledge_base_${timestamp}.portfolio.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      dispatch({ type: 'SET_SUCCESS', payload: "Knowledge base exported successfully." });
-    } catch (err) {
-      dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
-    }
-  }, [dispatch]);
-
-  const handleImportKb = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text) throw new Error("File is empty.");
-        const result = importKnowledgeBase(text);
-        dispatch({ type: 'IMPORT_KB_SUCCESS', payload: result });
-      } catch (err) {
-        let errorMessage = 'Failed to import knowledge base.';
-        if (err instanceof Error) {
-            if (err.message.toLowerCase().includes('json')) {
-                errorMessage = 'Import failed: The file is not valid JSON or has an incorrect format.';
-            } else {
-                errorMessage = err.message;
-            }
-        }
-        dispatch({ type: 'SET_ASYNC_ERROR', payload: errorMessage });
-      }
-    };
-    reader.readAsText(file);
-    (event.target as HTMLInputElement).value = '';
-  }, [dispatch]);
-
   const handleUpdateKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_KB_ENTRY', payload: entry }), [dispatch]);
   
   // --- Pinned Ideas Handlers ---
@@ -516,92 +479,55 @@ export const useAppManager = () => {
   const handleRemovePinnedIdea = useCallback((id: string) => dispatch({ type: 'REMOVE_PINNED_IDEA', payload: id }), [dispatch]);
   const handleUpdatePinnedIdea = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_PINNED_IDEA', payload: entry }), [dispatch]);
 
-  const handleExportPinnedIdeas = useCallback(() => {
-    try {
-      const jsonString = exportPinnedIdeas();
-      const blob = new Blob([jsonString], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `pinned_ideas_${timestamp}.ideas.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      dispatch({ type: 'SET_SUCCESS', payload: "Pinned ideas exported successfully." });
-    } catch (err) {
-      dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
-    }
-  }, [dispatch]);
-
-  const handleImportPinnedIdeas = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text) throw new Error("File is empty.");
-        const result = importPinnedIdeas(text);
-        dispatch({ type: 'IMPORT_PINNED_IDEAS_SUCCESS', payload: result });
-      } catch (err) {
-        let errorMessage = 'Failed to import pinned ideas.';
-        if (err instanceof Error) {
-            if (err.message.toLowerCase().includes('json')) {
-                errorMessage = 'Import failed: The file is not valid JSON or has an incorrect format.';
-            } else {
-                errorMessage = err.message;
-            }
-        }
-        dispatch({ type: 'SET_ASYNC_ERROR', payload: errorMessage });
-      }
-    };
-    reader.readAsText(file);
-    (event.target as HTMLInputElement).value = '';
-  }, [dispatch]);
-
   // --- Prior Art Library Handlers ---
   const handleRemovePriorArtLibraryEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_PRIOR_ART_LIBRARY_ENTRY', payload: id }), [dispatch]);
   const handleUpdatePriorArtLibraryEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_PRIOR_ART_LIBRARY_ENTRY', payload: entry }), [dispatch]);
 
-  const handleExportPriorArtLibrary = useCallback(() => {
+  const handleExportFullKb = useCallback(() => {
     try {
-      const jsonString = exportPriorArtLibrary();
+      const jsonString = exportFullKnowledgeBase();
       const blob = new Blob([jsonString], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `prior_art_library_${timestamp}.art.json`;
+      a.download = `patent_analyzer_full_backup_${timestamp}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      dispatch({ type: 'SET_SUCCESS', payload: "Prior art library exported successfully." });
+      dispatch({ type: 'SET_SUCCESS', payload: "Full knowledge base exported successfully." });
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
   }, [dispatch]);
 
-  const handleImportPriorArtLibrary = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFullKb = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text) throw new Error("File is empty.");
-        const result = importPriorArtLibrary(text);
-        dispatch({ type: 'IMPORT_PRIOR_ART_LIBRARY_SUCCESS', payload: result });
-      } catch (err) {
-        dispatch({ type: 'SET_ASYNC_ERROR', payload: `Import failed: ${sanitizeMessage(err)}` });
-      }
+        try {
+            const text = e.target?.result as string;
+            if (!text) throw new Error("File is empty.");
+            const result = importFullKnowledgeBase(text);
+            if (!result.success) {
+                throw new Error(result.message);
+            }
+            // Reload state from storage after import
+            dispatch({ type: 'INITIALIZE_KB', payload: getKnowledgeBase() });
+            dispatch({ type: 'INITIALIZE_PINNED_IDEAS', payload: getPinnedIdeas() });
+            dispatch({ type: 'INITIALIZE_PRIOR_ART_LIBRARY', payload: getPriorArtLibrary() });
+            dispatch({ type: 'SET_SUCCESS', payload: result.message });
+        } catch (err) {
+            dispatch({ type: 'SET_ASYNC_ERROR', payload: `Full import failed: ${sanitizeMessage(err)}` });
+        }
     };
     reader.readAsText(file);
     (event.target as HTMLInputElement).value = '';
   }, [dispatch]);
+
 
   // --- Analysis Session Handlers ---
   const handleExportExtractedInventions = useCallback(() => {
@@ -733,8 +659,6 @@ export const useAppManager = () => {
     startNewDraft,
     handleRemoveKbEntry,
     handleAddNewKbEntry,
-    handleExportKb,
-    handleImportKb,
     handleUpdateKbEntry,
     handlePinPriorArt,
     handleAcceptSuggestion,
@@ -743,13 +667,11 @@ export const useAppManager = () => {
     handleAddNewPinnedIdea,
     handleRemovePinnedIdea,
     handleUpdatePinnedIdea,
-    handleExportPinnedIdeas,
-    handleImportPinnedIdeas,
     handleRemovePriorArtLibraryEntry,
     handleUpdatePriorArtLibraryEntry,
-    handleExportPriorArtLibrary,
-    handleImportPriorArtLibrary,
     handleExportExtractedInventions,
     handleImportExtractedInventions,
+    handleExportFullKb,
+    handleImportFullKb,
   };
 };

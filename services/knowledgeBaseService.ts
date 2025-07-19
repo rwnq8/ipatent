@@ -1,4 +1,4 @@
-import { KnowledgeBaseEntry, KnowledgeBaseUpdateResult } from '../types';
+import { KnowledgeBaseEntry, KnowledgeBaseUpdateResult, FullKnowledgeBase } from '../types';
 import { normalizeApplicationNumber, sanitizeMessage } from './utils';
 import pako from 'pako';
 
@@ -6,12 +6,6 @@ const KB_STORAGE_KEY = 'patentAnalyzerKnowledgeBase';
 const PINNED_IDEAS_STORAGE_KEY = 'patentAnalyzerPinnedIdeas';
 const PRIOR_ART_LIBRARY_KEY = 'patentAnalyzerPriorArtLibrary';
 
-
-interface FullKnowledgeBase {
-  portfolio: KnowledgeBaseEntry[];
-  priorArtLibrary: KnowledgeBaseEntry[];
-  pinnedIdeas: KnowledgeBaseEntry[];
-}
 
 /**
  * Merges duplicate entries in a knowledge base. It uses a normalized application
@@ -299,18 +293,54 @@ export const exportFullKnowledgeBase = (): string => {
 
 export const importFullKnowledgeBase = (jsonString: string): { success: boolean, message: string } => {
   try {
-    const fullKb: FullKnowledgeBase = JSON.parse(jsonString);
-    
-    if (!fullKb || typeof fullKb !== 'object' || !Array.isArray(fullKb.portfolio) || !Array.isArray(fullKb.priorArtLibrary) || !Array.isArray(fullKb.pinnedIdeas)) {
-      throw new Error("Invalid knowledge base file format. The file must contain 'portfolio', 'priorArtLibrary', and 'pinnedIdeas' arrays.");
+    if (!jsonString || jsonString.trim() === '') {
+        throw new Error("Import file is empty or contains only whitespace.");
+    }
+    const parsedData = JSON.parse(jsonString);
+
+    if (!parsedData) {
+        throw new Error("Imported JSON file is null or empty.");
     }
 
-    saveKnowledgeBase(fullKb.portfolio);
-    savePriorArtLibrary(fullKb.priorArtLibrary);
-    savePinnedIdeas(fullKb.pinnedIdeas);
+    // Check for the new, consolidated object format
+    if (
+      typeof parsedData === 'object' &&
+      !Array.isArray(parsedData) &&
+      'portfolio' in parsedData &&
+      'priorArtLibrary' in parsedData &&
+      'pinnedIdeas' in parsedData &&
+      Array.isArray(parsedData.portfolio) &&
+      Array.isArray(parsedData.priorArtLibrary) &&
+      Array.isArray(parsedData.pinnedIdeas)
+    ) {
+      const fullKb = parsedData as FullKnowledgeBase;
+      // This is a full restore, so we overwrite existing data.
+      saveKnowledgeBase(fullKb.portfolio);
+      savePriorArtLibrary(fullKb.priorArtLibrary);
+      savePinnedIdeas(fullKb.pinnedIdeas);
 
-    const counts = `Portfolio: ${fullKb.portfolio.length}, Library: ${fullKb.priorArtLibrary.length}, Ideas: ${fullKb.pinnedIdeas.length}`;
-    return { success: true, message: `Successfully imported full knowledge base. Counts: ${counts}.` };
+      const counts = `Portfolio: ${fullKb.portfolio.length}, Library: ${fullKb.priorArtLibrary.length}, Ideas: ${fullKb.pinnedIdeas.length}`;
+      return { success: true, message: `Successfully imported full knowledge base. Counts: ${counts}.` };
+    }
+    
+    // Check for legacy, array-based format
+    else if (Array.isArray(parsedData)) {
+      console.warn("A legacy, array-based backup file was imported. Merging its contents into the current portfolio as a fallback.");
+      const legacyEntries = parsedData as KnowledgeBaseEntry[];
+      
+      const currentPortfolio = getKnowledgeBase();
+      const combined = [...currentPortfolio, ...legacyEntries];
+      const finalPortfolio = deduplicateKnowledgeBase(combined);
+      saveKnowledgeBase(finalPortfolio);
+
+      const addedCount = finalPortfolio.length - currentPortfolio.length;
+      return { success: true, message: `Imported legacy file and merged ${Math.max(0, addedCount)} entries into your main Portfolio.` };
+    }
+
+    // If neither format matches, it's an error.
+    else {
+      throw new Error("Invalid knowledge base file format. The file must be a JSON object with 'portfolio', 'priorArtLibrary', and 'pinnedIdeas' arrays, or a simple JSON array of portfolio entries.");
+    }
   } catch (error) {
     console.error("Failed to import full knowledge base:", error);
     return { success: false, message: `Import failed: ${sanitizeMessage(error)}` };
