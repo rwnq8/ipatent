@@ -6,7 +6,7 @@ interface KnowledgeBaseEntryFormProps {
     initialData: KnowledgeBaseEntry | Omit<KnowledgeBaseEntry, 'id'>;
     mode: 'add' | 'edit';
     ownedEntries: KnowledgeBaseEntry[];
-    onSave: (entryData: KnowledgeBaseEntry | Omit<KnowledgeBaseEntry, 'id'>) => void;
+    onSave: (entryData: KnowledgeBaseEntry) => void;
     onCancel: () => void;
 }
 
@@ -53,8 +53,10 @@ export function KnowledgeBaseEntryForm({ initialData, mode, ownedEntries, onSave
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (validate()) {
-            const finalData = {
-                ...formData,
+            const entryToSave: KnowledgeBaseEntry = {
+                id: 'id' in formData ? formData.id : `kb-manual-${Date.now()}`,
+                // Need to cast formData to any to access properties that might not be on Omit version
+                ...(formData as any),
                 extractedClaims: typeof formData.extractedClaims === 'string'
                     ? (formData.extractedClaims as string).split('\n').map(s => s.trim()).filter(Boolean)
                     : formData.extractedClaims || [],
@@ -62,7 +64,7 @@ export function KnowledgeBaseEntryForm({ initialData, mode, ownedEntries, onSave
                     ? (formData.extractedEmbodiments as string).split('\n').map(s => s.trim()).filter(Boolean)
                     : formData.extractedEmbodiments || [],
             };
-            onSave(finalData);
+            onSave(entryToSave);
         }
     };
     

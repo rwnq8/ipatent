@@ -153,6 +153,7 @@ export type Action =
   | { type: 'REMOVE_KB_ENTRY'; payload: string }
   | { type: 'IMPORT_KB_SUCCESS'; payload: KnowledgeBaseUpdateResult }
   | { type: 'INITIALIZE_KB'; payload: KnowledgeBaseEntry[] }
+  | { type: 'ADD_KB_ENTRY'; payload: KnowledgeBaseEntry }
   | { type: 'UPDATE_KB_ENTRY'; payload: KnowledgeBaseEntry }
   | { type: 'INITIALIZE_PINNED_IDEAS'; payload: KnowledgeBaseEntry[] }
   | { type: 'REMOVE_PINNED_IDEA'; payload: string }

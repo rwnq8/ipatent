@@ -1,10 +1,5 @@
 
 
-
-
-
-
-
 import { useReducer, useCallback, useEffect } from 'react';
 import { processUploadedFiles } from '../services/fileParserService';
 import {
@@ -92,6 +87,10 @@ const mergeEntryIntoKb = (kb: KnowledgeBaseEntry[], entryToAdd: KnowledgeBaseEnt
             updatedEntry.notes = `${updatedEntry.notes || ''}\n\n${notePrefix}: ${entryToAdd.notes}`.trim();
         }
         
+        if (entryToAdd.priorityTo && !existingEntry.priorityTo) {
+            updatedEntry.priorityTo = entryToAdd.priorityTo;
+        }
+        
         updatedKb = kb.map((e, i) => i === existingEntryIndex ? updatedEntry : e);
         successMsg = `Existing entry "${updatedEntry.title}" updated with new information.`;
     } else {
@@ -102,34 +101,32 @@ const mergeEntryIntoKb = (kb: KnowledgeBaseEntry[], entryToAdd: KnowledgeBaseEnt
     return { updatedKb, successMsg };
 };
 
-const parsePriorArtFromReport = (report: PatentAnalysisReport): KnowledgeBaseEntry[] => {
-    // This is a simplified regex-based parser. A more robust solution might involve
-    // asking the AI to provide a structured list of prior art alongside the markdown.
-    const priorArt: KnowledgeBaseEntry[] = [];
-    const priorArtSectionRegex = /## Section 2: Prior Art Search & Analysis([\s\S]*?)##/m;
-    const priorArtSectionMatch = report.markdownContent.match(priorArtSectionRegex);
+/**
+ * Creates KnowledgeBaseEntry items from the structured grounding metadata
+ * returned by the Gemini API. This is more robust than parsing markdown.
+ * @param report The full patent analysis report object.
+ * @returns An array of KnowledgeBaseEntry objects representing discovered prior art.
+ */
+const parseGroundingMetadata = (report: PatentAnalysisReport): KnowledgeBaseEntry[] => {
+    const chunks = report.groundingMetadata?.groundingChunks?.filter(c => c.web && c.web.uri) || [];
 
-    if (priorArtSectionMatch) {
-        const priorArtSection = priorArtSectionMatch[1];
-        const artRegex = /\*\*(.*?)\*\s*`([^`]+)`/g;
-        let match;
-        while ((match = artRegex.exec(priorArtSection)) !== null) {
-            priorArt.push({
-                id: `kb-discovered-${Date.now()}-${Math.random()}`,
-                isOwner: false,
-                title: match[1].trim(),
-                applicationNumber: match[2].trim(),
-                filingDate: 'N/A',
-                type: 'non-provisional',
-                notes: 'Extracted from patentability report.',
-                files: [],
-                extractedClaims: [],
-                extractedEmbodiments: [],
-                isComplete: false,
-            });
-        }
+    if (chunks.length === 0) {
+        return [];
     }
-    return priorArt;
+    
+    return chunks.map((chunk, index) => ({
+        id: `kb-discovered-${Date.now()}-${index}`,
+        isOwner: false,
+        title: chunk.web!.title || 'Untitled Web Result',
+        applicationNumber: chunk.web!.uri || 'No URI Available',
+        filingDate: 'N/A',
+        type: 'non-provisional', // Assume web content is analogous to non-provisional art
+        notes: `Source: ${chunk.web!.uri}\nRetrieval query: ${chunk.retrievalQuery || 'N/A'}`,
+        files: chunk.retrievedContext?.text ? [{ name: 'Retrieved Context Snippet', content: chunk.retrievedContext.text }] : [],
+        extractedClaims: [],
+        extractedEmbodiments: [],
+        isComplete: false,
+    }));
 };
 
 
@@ -206,9 +203,10 @@ const appReducer = (state: AppState, action: Action): AppState => {
     }
     case 'GENERATE_REPORT_START':
       return { ...state, status: 'generatingReport', error: null, success: null };
-    case 'GENERATE_REPORT_SUCCESS':
-      const discoveredPriorArt = parsePriorArtFromReport(action.payload);
+    case 'GENERATE_REPORT_SUCCESS': {
+      const discoveredPriorArt = parseGroundingMetadata(action.payload);
       return { ...state, status: 'reportReady', patentAnalysisReport: action.payload, discoveredPriorArt, success: "Patentability report generated successfully." };
+    }
     case 'GENERATE_APP_START':
       return { ...state, status: 'generatingApplication', error: null, success: null };
     case 'GENERATE_APP_SUCCESS':
@@ -228,6 +226,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
     }
     case 'INITIALIZE_KB':
       return { ...state, ownedKnowledgeBase: action.payload };
+    case 'ADD_KB_ENTRY': {
+        const updatedKb = [...state.ownedKnowledgeBase, action.payload];
+        saveKnowledgeBase(updatedKb);
+        return { ...state, ownedKnowledgeBase: getKnowledgeBase(), success: `Entry "${action.payload.title}" added.` };
+    }
     case 'IMPORT_KB_SUCCESS': {
         const { updatedKb, addedCount } = action.payload;
         return { ...state, ownedKnowledgeBase: updatedKb, success: `Knowledge base imported. ${addedCount} new entries added.`, error: null };
@@ -370,6 +373,7 @@ export const useAppManager = () => {
   }, []);
 
   const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), []);
+  const handleAddNewKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'ADD_KB_ENTRY', payload: entry }), []);
   
   const handleExportKb = useCallback(() => {
     try {
@@ -379,7 +383,7 @@ export const useAppManager = () => {
       const a = document.createElement('a');
       a.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `patent_portfolio_knowledge_base_${timestamp}.json`;
+      a.download = `patent_portfolio_knowledge_base_${timestamp}.portfolio.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -393,12 +397,6 @@ export const useAppManager = () => {
   const handleImportKb = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (!file.name.startsWith('patent_portfolio_knowledge_base_')) {
-      dispatch({ type: 'SET_ERROR', payload: `Invalid file. Please select a portfolio file exported from this app (e.g., "patent_portfolio_knowledge_base_....json").` });
-      event.target.value = '';
-      return;
-    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -430,7 +428,7 @@ export const useAppManager = () => {
       const a = document.createElement('a');
       a.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      a.download = `pinned_ideas_${timestamp}.json`;
+      a.download = `pinned_ideas_${timestamp}.ideas.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -444,12 +442,6 @@ export const useAppManager = () => {
   const handleImportPinnedIdeas = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (!file.name.startsWith('pinned_ideas_')) {
-      dispatch({ type: 'SET_ERROR', payload: `Invalid file. Please select a pinned ideas file exported from this app (e.g., "pinned_ideas_....json").` });
-      event.target.value = '';
-      return;
-    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -510,6 +502,7 @@ export const useAppManager = () => {
     handleGenerateApplication,
     startNewAnalysis,
     handleRemoveKbEntry,
+    handleAddNewKbEntry,
     handleExportKb,
     handleImportKb,
     handleUpdateKbEntry,

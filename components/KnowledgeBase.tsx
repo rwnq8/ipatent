@@ -10,6 +10,7 @@ interface KnowledgeBaseProps {
   pinnedIdeas: KnowledgeBaseEntry[];
   discoveredEntries: KnowledgeBaseEntry[];
   onRemoveEntry: (id: string) => void;
+  onAddEntry: (entryData: KnowledgeBaseEntry) => void;
   onUpdateEntry: (entryData: KnowledgeBaseEntry) => void;
   onExport: () => void;
   onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -150,6 +151,7 @@ export function KnowledgeBase({
     pinnedIdeas,
     discoveredEntries, 
     onRemoveEntry, 
+    onAddEntry,
     onPinEntry, 
     onExport, 
     onImport, 
@@ -161,15 +163,29 @@ export function KnowledgeBase({
     disabled 
 }: KnowledgeBaseProps) {
   const [editingEntry, setEditingEntry] = useState<KnowledgeBaseEntry | null>(null);
+  const [isAddingEntry, setIsAddingEntry] = useState(false);
   const [editingIdea, setEditingIdea] = useState<KnowledgeBaseEntry | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const ideaFormRef = useRef<HTMLDivElement>(null);
   
+  const defaultNewEntry: Omit<KnowledgeBaseEntry, 'id'> = {
+      isOwner: true,
+      type: 'non-provisional',
+      title: '',
+      applicationNumber: '',
+      filingDate: '',
+      files: [],
+      extractedClaims: [],
+      extractedEmbodiments: [],
+      isComplete: true, // Manually added entries are assumed to be user-vetted
+      notes: '',
+  };
+
   useEffect(() => {
-    if (editingEntry && formRef.current) {
+    if ((editingEntry || isAddingEntry) && formRef.current) {
       formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [editingEntry]);
+  }, [editingEntry, isAddingEntry]);
 
   useEffect(() => {
     if (editingIdea && ideaFormRef.current) {
@@ -204,12 +220,26 @@ export function KnowledgeBase({
       return roots;
   }, [ownedEntries]);
   
-  const handleStartEdit = (entry: KnowledgeBaseEntry) => setEditingEntry(entry);
+  const handleStartEdit = (entry: KnowledgeBaseEntry) => {
+    setIsAddingEntry(false);
+    setEditingEntry(entry);
+  }
   const handleCancelEdit = () => setEditingEntry(null);
   const handleSaveEdit = (formData: KnowledgeBaseEntry) => {
     onUpdateEntry(formData);
     handleCancelEdit();
   }
+
+  const handleStartAdd = () => {
+    setEditingEntry(null);
+    setIsAddingEntry(true);
+  };
+  const handleCancelAdd = () => setIsAddingEntry(false);
+  const handleSaveAdd = (formData: KnowledgeBaseEntry) => {
+    onAddEntry(formData);
+    handleCancelAdd();
+  };
+
 
   const handleStartEditIdea = (idea: KnowledgeBaseEntry) => setEditingIdea(idea);
   const handleCancelEditIdea = () => setEditingIdea(null);
@@ -217,6 +247,8 @@ export function KnowledgeBase({
     onUpdatePinnedIdea(formData);
     handleCancelEditIdea();
   }
+
+  const formToShow = isAddingEntry ? 'add' : editingEntry ? 'edit' : null;
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-lg mt-8">
@@ -231,7 +263,7 @@ export function KnowledgeBase({
                 <label
                   htmlFor="kb-import-input"
                   className={`p-1.5 border rounded-md shadow-sm text-slate-700 bg-white ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50 cursor-pointer'}`}
-                  title="Import portfolio from a 'patent_portfolio_knowledge_base_....json' file"
+                  title="Import portfolio from a '*.portfolio.json' file"
                 >
                   <UploadIcon className="h-5 w-5" />
                 </label>
@@ -239,32 +271,39 @@ export function KnowledgeBase({
                   id="kb-import-input"
                   type="file"
                   onChange={onImport}
-                  accept=".json"
+                  accept=".portfolio.json,.json"
                   className="hidden"
                   disabled={disabled}
                 />
+                <button
+                    onClick={handleStartAdd}
+                    disabled={disabled}
+                    className="inline-flex items-center px-3 py-1.5 border border-blue-600 text-sm font-medium rounded-md shadow-sm text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                    Add New Entry
+                </button>
             </div>
         </div>
 
-        {editingEntry && (
+        {formToShow && (
           <div ref={formRef} className="mb-6">
             <KnowledgeBaseEntryForm
-              key={`edit-kb-${editingEntry.id}`}
-              initialData={editingEntry}
-              mode={'edit'}
+              key={formToShow === 'add' ? 'add-new' : `edit-kb-${editingEntry!.id}`}
+              initialData={formToShow === 'add' ? defaultNewEntry : editingEntry!}
+              mode={formToShow}
               ownedEntries={ownedEntries}
-              onSave={(data) => handleSaveEdit(data as KnowledgeBaseEntry)}
-              onCancel={handleCancelEdit}
+              onSave={formToShow === 'add' ? handleSaveAdd : handleSaveEdit}
+              onCancel={formToShow === 'add' ? handleCancelAdd : handleCancelEdit}
             />
           </div>
         )}
         
-        <p className="text-sm text-slate-500 mb-4">Your persistent portfolio of owned applications. It is automatically populated from your uploaded files. Manage your entries below or use the buttons above to import or export your portfolio.</p>
+        <p className="text-sm text-slate-500 mb-4">Your persistent portfolio of owned applications. It is automatically populated from your uploaded files. Manage your entries below or use the buttons above to import or export your portfolio. When importing, the dialog will filter for files ending in `.portfolio.json`.</p>
         <div className="space-y-2">
             {hierarchicalOwnedEntries.length > 0 ? (
                 <RecursiveEntryRenderer entries={hierarchicalOwnedEntries} onRemoveEntry={onRemoveEntry} onEditEntry={handleStartEdit} disabled={disabled} />
             ) : (
-                <p className="text-center text-slate-500 py-4">No portfolio entries found. Upload documents that contain patent applications to get started.</p>
+                !isAddingEntry && <p className="text-center text-slate-500 py-4">No portfolio entries found. Upload documents or add an entry manually to get started.</p>
             )}
         </div>
       </div>
@@ -280,7 +319,7 @@ export function KnowledgeBase({
                 <label
                   htmlFor="ideas-import-input"
                   className={`p-1.5 border rounded-md shadow-sm text-slate-700 bg-white ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50 cursor-pointer'}`}
-                  title="Import ideas from a 'pinned_ideas_....json' file"
+                  title="Import ideas from a '*.ideas.json' file"
                 >
                   <UploadIcon className="h-5 w-5" />
                 </label>
@@ -288,7 +327,7 @@ export function KnowledgeBase({
                   id="ideas-import-input"
                   type="file"
                   onChange={onImportPinnedIdeas}
-                  accept=".json"
+                  accept=".ideas.json,.json"
                   className="hidden"
                   disabled={disabled}
                 />
@@ -308,7 +347,7 @@ export function KnowledgeBase({
           </div>
         )}
 
-        <p className="text-sm text-slate-500 mb-4">A list of ideas pinned from discovered prior art. Use these for inspiration or to develop new embodiments. They are not part of your formal portfolio and are not used as context for AI analysis.</p>
+        <p className="text-sm text-slate-500 mb-4">A list of ideas pinned from discovered prior art. Use these for inspiration or to develop new embodiments. They are not part of your formal portfolio and are not used as context for AI analysis. You can import/export this list separately. The import dialog will filter for files ending in `.ideas.json`.</p>
         <div className="space-y-2">
             {pinnedIdeas.length > 0 ? (
                  pinnedIdeas.map(idea => (

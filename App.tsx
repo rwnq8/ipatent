@@ -1,9 +1,4 @@
 
-
-
-
-
-
 import React from 'react';
 import { FileUpload } from './components/FileUpload';
 import { PatentApplicationDisplay } from './components/PatentApplicationDisplay';
@@ -59,6 +54,7 @@ export function App() {
           pinnedIdeas={manager.pinnedIdeas}
           discoveredEntries={manager.discoveredPriorArt}
           onRemoveEntry={manager.handleRemoveKbEntry}
+          onAddEntry={manager.handleAddNewKbEntry}
           onUpdateEntry={manager.handleUpdateKbEntry}
           onExport={manager.handleExportKb}
           onImport={manager.handleImportKb}
