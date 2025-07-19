@@ -2,7 +2,7 @@ import React from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm'; // For GitHub Flavored Markdown (tables, etc.)
 import remarkSlug from 'remark-slug';
-import { DownloadIcon, ExternalLinkIcon, ExclamationTriangleIcon } from './icons';
+import { DownloadIcon, ExternalLinkIcon, ExclamationTriangleIcon, PencilIcon } from './icons';
 import { Alert } from './Alert';
 import { PatentAnalysisReport, GroundingChunk } from '../types';
 import { REPORT_DISCLAIMER } from '../constants';
@@ -11,6 +11,9 @@ import { sanitizeForFilename } from '../services/utils';
 interface ReportDisplayProps {
   report: PatentAnalysisReport | null;
   reportTitle?: string;
+  onStartNewAnalysis: () => void;
+  onGenerateApplication: (type: 'provisional' | 'non-provisional') => void;
+  disabled: boolean;
 }
 
 // Helper function to escape special characters for use in RegExp
@@ -81,7 +84,7 @@ const getNodeText = (node: any): string => {
 };
 
 
-export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
+export function ReportDisplay({ report, reportTitle, onStartNewAnalysis, onGenerateApplication, disabled }: ReportDisplayProps) {
   if (!report || !report.markdownContent) {
     return null;
   }
@@ -197,7 +200,7 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
     ),
     h3: ({ node, id, children, ...props }) => <h3 id={id} className="text-xl lg:text-2xl font-semibold text-amber-700 mt-6 mb-3 scroll-mt-20" {...props}>{children}</h3>,
     p: ({ node, children, ...props }) => <p className="mb-4 leading-relaxed text-amber-900/90" {...props}>{children}</p>,
-    ul: ({ node, children, ...props }) => <ul className="list-disc list-outside pl-6 mb-4 space-y-2 text-amber-900/90" {...props}>{children}</ul>,
+    ul: ({ node, children, ...props }) => <ul className="list-disc list-outside pl-6 mb-4 space-y-2 text-amber-900/90" {...props}></ul>,
     strong: ({node, children, ...props}) => <strong className="font-semibold text-amber-900" {...props}>{children}</strong>,
     blockquote: ({ node, children, ...props }) => (
       <blockquote 
@@ -210,7 +213,7 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
   };
 
   const renderGroundingMetadata = (metadata: PatentAnalysisReport['groundingMetadata']) => {
-    if (!metadata || (!metadata.groundingChunks?.length && !metadata.searchQueries?.length)) {
+    if (!metadata || (!metadata.groundingChunks?.length && !metadata.webSearchQueries?.length)) {
       return (
         <div className="mt-8 p-4 bg-slate-50 border border-slate-200 rounded-md">
            <p className="text-sm text-slate-500">No specific sources or grounding information cited by the model for this response.</p>
@@ -224,15 +227,15 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
     return (
       <div className="mt-8 mb-4 p-5 bg-slate-100 border border-slate-300 rounded-lg shadow-md">
         <h3 id="sources-grounding-information" className="text-xl font-semibold text-slate-700 mb-4 border-b border-slate-300 pb-3 scroll-mt-20">Sources &amp; Grounding Information</h3>
-        {metadata.searchQueries && metadata.searchQueries.length > 0 && (
-           <p className="text-sm text-slate-600 mb-3">Search queries considered by the model: <em className="font-semibold text-slate-700">{metadata.searchQueries.join('; ')}</em></p>
+        {metadata.webSearchQueries && metadata.webSearchQueries.length > 0 && (
+           <p className="text-sm text-slate-600 mb-3">Search queries considered by the model: <em className="font-semibold text-slate-700">{metadata.webSearchQueries.join('; ')}</em></p>
         )}
         {webChunks.length > 0 && (
           <>
             <h4 className="text-md font-medium text-slate-600 mt-3 mb-2">Web Sources Cited:</h4>
             <ul className="list-disc list-outside space-y-1.5 pl-5">
               {webChunks.map((chunk: GroundingChunk, index: number) => (
-                chunk.web && ( 
+                chunk.web && chunk.web.uri && ( 
                   <li key={`web-${index}`} className="text-sm">
                     <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center">
                       {chunk.web.title || chunk.web.uri}
@@ -260,7 +263,7 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
              ))}
           </div>
         )}
-         {webChunks.length === 0 && contextChunks.length === 0 && (!metadata.searchQueries || metadata.searchQueries.length === 0) && (
+         {webChunks.length === 0 && contextChunks.length === 0 && (!metadata.webSearchQueries || metadata.webSearchQueries.length === 0) && (
              <p className="text-sm text-slate-500">No specific sources or context cited by the model for this response.</p>
          )}
       </div>
@@ -281,17 +284,27 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
 
   return (
     <div className="bg-white p-6 sm:p-8 rounded-lg shadow-xl mt-8 relative">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 pb-4 border-b border-slate-300">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 pb-4 border-b border-slate-300 gap-4">
         <h2 className="text-2xl lg:text-3xl font-bold text-slate-800 mb-2 sm:mb-0">
-          Patentability &amp; Prior Art Analysis Report
+          Patentability Analysis &amp; Next Steps
         </h2>
-        <button
-          onClick={exportFullReport}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"
-        >
-          <DownloadIcon className="mr-2 h-5 w-5" />
-          Export Full Report
-        </button>
+        <div className="flex items-center gap-2">
+            <button
+                onClick={onStartNewAnalysis}
+                className="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                title="Start a new analysis"
+            >
+                <PencilIcon className="mr-2 h-5 w-5" />
+                New Analysis
+            </button>
+            <button
+              onClick={exportFullReport}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"
+            >
+              <DownloadIcon className="mr-2 h-5 w-5" />
+              Export Full Report
+            </button>
+        </div>
       </div>
       
       <div className="my-6 flex flex-wrap gap-2">
@@ -349,7 +362,32 @@ export function ReportDisplay({ report, reportTitle }: ReportDisplayProps) {
         </div>
       )}
 
-      <div className="max-w-none mt-4 prose prose-slate lg:prose-xl">
+      {/* --- Generation Actions --- */}
+      <div className="mt-12 pt-8 border-t-2 border-dashed border-slate-300">
+         <h3 className="text-xl font-semibold text-slate-700 mb-2">Step 3: Draft Application</h3>
+         <p className="text-sm text-slate-600 mb-6">
+            Based on the comprehensive report above, you can now generate a draft patent application.
+        </p>
+        <div className="flex flex-col sm:flex-row justify-end items-center gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <button
+                onClick={() => onGenerateApplication('provisional')}
+                disabled={disabled}
+                className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-teal-500 text-sm font-medium rounded-md shadow-sm text-teal-700 bg-white hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-300 disabled:cursor-not-allowed"
+            >
+                Draft Provisional App
+            </button>
+            <button
+                onClick={() => onGenerateApplication('non-provisional')}
+                disabled={disabled}
+                className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-green-600 text-sm font-medium rounded-md shadow-sm text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-300 disabled:cursor-not-allowed"
+            >
+                Draft Non-Provisional App
+            </button>
+        </div>
+      </div>
+
+
+      <div className="max-w-none mt-8 prose prose-slate lg:prose-xl">
           <ReactMarkdown components={components} remarkPlugins={[remarkGfm, remarkSlug]}>
               {REPORT_DISCLAIMER}
           </ReactMarkdown>

@@ -1,10 +1,7 @@
 
-
-
-
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { GEMINI_MODEL_TEXT } from '../constants';
-import { ProcessedFile, PatentApplication, KnowledgeBaseEntry, SuggestedPortfolioEntry, ExtractedInvention, AnalyzedInvention, GradedClaim, GeneratedFigure } from "../types";
+import { ProcessedFile, PatentApplication, KnowledgeBaseEntry, SuggestedPortfolioEntry, ExtractedInvention, GeneratedFigure, PatentAnalysisReport } from "../types";
 import { sanitizeForApi } from "./utils";
 
 const API_KEY = process.env.API_KEY;
@@ -299,222 +296,102 @@ ${fileContentBlock}
     }
 };
 
-/**
- * First-pass analysis to get the summary and prior art for an invention.
- * This is called once per analysis.
- */
-async function _getInventionAnalysisAndPriorArt(invention: ExtractedInvention, knowledgeBase: KnowledgeBaseEntry[]): Promise<{ analysisSummary: string, priorArt: Omit<KnowledgeBaseEntry, 'id'>[] }> {
-    if (!ai) throw new Error("Gemini API client is not initialized.");
-    
-    const prompt = `
-**Role:** World-Class Patent Attorney & Prior Art Specialist.
+export const generatePatentabilityReport = async (
+  invention: ExtractedInvention,
+  knowledgeBase: KnowledgeBaseEntry[]
+): Promise<PatentAnalysisReport> => {
+  if (!ai) throw new Error("Gemini API client is not initialized.");
+  if (!invention) throw new Error("Invention data is required.");
 
-**Mission:** You will perform a high-level analysis of an invention. Your goal is to conduct a prior art search and provide an overall patentability summary. You will NOT grade individual claims in this step.
+  const bestPracticesGuide = await getBestPracticesGuideContent();
 
-**Context: Knowledge Base (User's Own IP Portfolio)**
-This information is for context ONLY. It is NOT prior art for rejecting the user's claims.
+  const prompt = `
+**Role:** You are a world-class patent attorney and prior art specialist with deep expertise in technology and global patent law, as detailed in the provided "Global Patent Playbook".
+
+**Mission:** Generate a comprehensive, client-ready "Patentability & Prior Art Analysis Report" in Markdown format for the invention detailed below. Your analysis must be thorough, strategic, and grounded in the principles of the playbook. You must use Google Search to find relevant prior art.
+
+**Context: Invention to Analyze**
+- **Title:** ${invention.title}
+- **Description:** ${invention.description}
+- **Initially Extracted Claims/Embodiments for Analysis:**
+${invention.claims.map(c => `- (${c.type}) ${c.text}`).join('\n')}
+
+**Context: User's Existing IP Portfolio (for context ONLY, NOT prior art)**
 ${formatKnowledgeBaseForPrompt(knowledgeBase)}
----
 
-**Invention to Analyze:**
-Title: ${invention.title}
-Description: ${invention.description}
-Full Disclosure Text (for context):
-${invention.sourceContent.substring(0, 150000)}
 ---
-
 **TASK & OUTPUT INSTRUCTIONS**
 
-You will generate a single JSON object. This is your only output.
+Your entire output MUST be a single Markdown document. You must generate content for ALL the following sections in the specified order.
 
-**JSON OUTPUT STRUCTURE:**
-{
-  "analysisSummary": "A one-paragraph summary of the overall patentability landscape for this invention based on your search.",
-  "priorArt": [
-    {
-      "title": "...",
-      "applicationNumber": "...",
-      "filingDate": "...",
-      "type": "'provisional' or 'non-provisional'",
-      "notes": "A brief explanation of relevance."
-    }
-  ]
-}
-
-**CRITICAL REQUIREMENT:**
-- Your entire response MUST be the JSON object described above, and nothing else.
-- Do not write any introduction, summary, or text before the opening '{' of the JSON object.
-`;
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL_TEXT,
-            contents: prompt,
-            config: {
-                temperature: 0.2,
-                tools: [{ googleSearch: {} }],
-            }
-        });
-        
-        let jsonStr = response.text.trim();
-        const firstBracket = jsonStr.indexOf('{');
-        const lastBracket = jsonStr.lastIndexOf('}');
-        if (firstBracket !== -1 && lastBracket > firstBracket) {
-            jsonStr = jsonStr.substring(firstBracket, lastBracket + 1);
-        }
-        
-        const parsedData = JSON.parse(jsonStr);
-        return {
-            analysisSummary: parsedData.analysisSummary || "No summary provided.",
-            priorArt: parsedData.priorArt || [],
-        };
-    } catch (error) {
-        console.error("Error during prior art analysis:", error);
-        throw new Error(`Failed to perform prior art analysis: ${(error as Error).message}`);
-    }
-}
-
-
-/**
- * Second-pass analysis to grade a small chunk of claims using the context from the first pass.
- * This is called multiple times in a loop.
- */
-async function _gradeClaimChunk(
-    claimsToGrade: { id: number; text: string; type: string; }[], 
-    invention: ExtractedInvention, 
-    analysisContext: { analysisSummary: string, priorArt: Omit<KnowledgeBaseEntry, 'id'>[] }
-): Promise<GradedClaim[]> {
-    if (!ai) throw new Error("Gemini API client is not initialized.");
-
-    const prompt = `
-**Role:** World-Class Patent Attorney & Prior Art Specialist.
-
-**Mission:** You will perform a focused analysis on a small batch of invention claims. Your goal is to provide a patentability assessment for **EACH** provided claim and suggest improvements for weak claims, based on the provided prior art context.
-
-**Overall Invention Context:**
-Title: ${invention.title}
-Description: ${invention.description}
-
-**Prior Art & Analysis Summary (for context ONLY):**
-Summary: ${analysisContext.analysisSummary}
-Prior Art Found: ${analysisContext.priorArt.map(p => p.applicationNumber).join(', ') || 'None'}
 ---
+# Patentability & Prior Art Analysis Report for: "${invention.title}"
 
-**Claims/Embodiments Batch to Evaluate (Count: ${claimsToGrade.length}):**
-\`\`\`json
-${JSON.stringify(claimsToGrade, null, 2)}
-\`\`\`
+## Section 1: Analysis of Initial Claims
+- Provide a detailed critique of the initial claims/embodiments.
+- Identify strengths (e.g., specific technical limitations) and weaknesses (e.g., vagueness, broadness, business method character).
+- Discuss potential §101 (Alice/Mayo), §102 (novelty), and §103 (obviousness) issues.
+
+## Section 2: Prior Art Search & Analysis
+- Detail the findings from your Google Search.
+- For the top 3-5 most relevant prior art references found, provide a detailed analysis.
+- Explain why each reference is relevant and which specific claims it potentially reads on.
+
+## Section 3: Strategic Landscape & Opportunities
+- Based on the prior art, analyze the competitive landscape. Is the field crowded or open?
+- Identify potential "white space" or avenues for innovation.
+- Discuss potential design-around strategies that a competitor might use against the initial claims.
+- Suggest strategic directions for the invention to enhance its defensibility and commercial value.
+
+## Section 4: Claim Broadening & Narrowing Strategy
+- Based on the prior art, provide concrete advice on claim strategy.
+- Which claim elements could be broadened without hitting prior art?
+- Which claims need to be narrowed with additional specific limitations to ensure patentability? Provide examples.
+
+## Section 5: "Best Mode" Claim Set & Go/No-Go Assessment
+
+### A. "Best Mode" Revised Claims
+- Draft a new, revised set of 3-5 claims that you believe represent the strongest, most defensible version of this invention. These should incorporate the strategies from Section 4.
+
+### B. Claim Chart vs. Closest Art
+- Create a simple markdown table comparing your top revised independent claim against the single closest prior art reference you found.
+
+### C. Strategic Go/No-Go Recommendation
+- Provide a final, clear recommendation. Should the client proceed with a patent application?
+- Justify your recommendation based on the expected scope of protection, the difficulty of prosecution, and the commercial landscape. Grade your confidence (e.g., High Confidence GO, Cautious GO, NO-GO).
+
+--- APPENDICES ---
+
+## Appendix A: Detailed Prior Art & FTO Analysis
+- (This section is for detailed breakdown of references and is not required in this generation pass)
+- You may leave this section with a placeholder message like "Detailed FTO analysis not performed."
+
+## Red Team Analysis: A Mandatory Self-Critique
+- **CRITICAL:** In this section, you must challenge your own conclusions.
+- What are the weakest points in your analysis? What assumptions did you make?
+- If an opposing counsel were to attack this report, which arguments would they use?
+- What's the most likely reason a patent office would reject your "Best Mode" claims?
+- This section demonstrates intellectual honesty and is non-negotiable.
 ---
-
-**TASK & OUTPUT INSTRUCTIONS**
-
-You will generate a single JSON array named \`gradedClaims\`. This is your only output.
-Each object in the array MUST correspond to a claim from the input batch, in the same order.
-
-**JSON ARRAY ITEM STRUCTURE:**
-{
-  "text": "The verbatim text of the original claim.",
-  "type": "The verbatim type ('explicit' or 'inferred') of the original claim.",
-  "grade": "Your patentability assessment grade (e.g., 'A (Green - Strong)', 'B (Yellow - Moderate)', 'C (Red - Weak)', 'F (Black - Unpatentable)').",
-  "justification": "A brief explanation for the grade, referencing the provided prior art context if applicable.",
-  "suggestedRevision": "CRITICAL: If grade is 'C' or 'F', you MUST provide an improved version of the claim text here to make it patentable (aim for a 'B' grade). Otherwise, this must be null.",
-  "revisionJustification": "If you provided a 'suggestedRevision', you MUST explain here why your changes improve patentability. Otherwise, this must be null."
-}
-
-**CRITICAL REQUIREMENT:**
-- The JSON array MUST contain exactly ${claimsToGrade.length} objects.
-- Your entire response MUST be a single JSON array, starting with '[' and ending with ']'. Do not wrap it in a parent object or add any other text.
 `;
 
-    const gradedClaimSchema = {
-        type: Type.OBJECT,
-        properties: {
-            text: { type: Type.STRING },
-            type: { type: Type.STRING },
-            grade: { type: Type.STRING },
-            justification: { type: Type.STRING },
-            suggestedRevision: { type: Type.STRING },
-            revisionJustification: { type: Type.STRING },
-        },
-        required: ['text', 'type', 'grade', 'justification']
-    };
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL_TEXT,
+    contents: prompt,
+    config: {
+      systemInstruction: bestPracticesGuide,
+      temperature: 0.4,
+      tools: [{ googleSearch: {} }],
+    },
+  });
 
-    const responseSchema = {
-        type: Type.ARRAY,
-        items: gradedClaimSchema
-    };
-
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL_TEXT,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema,
-                temperature: 0.2,
-            }
-        });
-
-        const jsonStr = response.text.trim();
-        const parsedData = JSON.parse(jsonStr) as any[];
-        
-        if (!Array.isArray(parsedData) || parsedData.length !== claimsToGrade.length) {
-            console.error(`Claim chunk grading failed. Expected ${claimsToGrade.length}, got ${parsedData.length}.`);
-            throw new Error(`Claim chunk grading failed. Expected ${claimsToGrade.length}, got ${parsedData.length}.`);
-        }
-        
-        return parsedData.map(gc => ({
-            ...gc,
-            selected: true,
-            suggestedRevision: gc.suggestedRevision || undefined,
-            revisionJustification: gc.revisionJustification || undefined,
-        }));
-        
-    } catch (error) {
-        console.error("Error during claim chunk grading:", error);
-        throw new Error(`Failed to grade claim chunk: ${(error as Error).message}`);
+  return {
+    markdownContent: response.text,
+    groundingMetadata: {
+      groundingChunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks,
+      webSearchQueries: response.candidates?.[0]?.groundingMetadata?.webSearchQueries,
     }
-}
-
-
-export const analyzeAndRefineInvention = async (invention: ExtractedInvention, knowledgeBase: KnowledgeBaseEntry[]): Promise<AnalyzedInvention> => {
-    if (!ai) throw new Error("Gemini API client is not initialized.");
-
-    // Step 1: Get overall analysis and prior art
-    const analysisContext = await _getInventionAnalysisAndPriorArt(invention, knowledgeBase);
-
-    // Step 2: Grade claims in chunks for robustness
-    const allClaims = invention.claims.map((claim, index) => ({
-        id: index,
-        text: claim.text,
-        type: claim.type
-    }));
-    
-    const CHUNK_SIZE = 20; // Process 20 claims at a time for reliability
-    const allGradedClaims: GradedClaim[] = [];
-
-    for (let i = 0; i < allClaims.length; i += CHUNK_SIZE) {
-        const chunk = allClaims.slice(i, i + CHUNK_SIZE);
-        console.log(`Grading claims ${i + 1} to ${i + chunk.length} of ${allClaims.length}...`);
-        const gradedChunk = await _gradeClaimChunk(chunk, invention, analysisContext);
-        
-        if (gradedChunk.length !== chunk.length) {
-            // This check is critical for ensuring the AI followed instructions for the chunk
-            throw new Error(`Critical Error: Claim grading chunk failed. The AI did not return the correct number of graded claims for a batch. Expected ${chunk.length}, but received ${gradedChunk.length}.`);
-        }
-        allGradedClaims.push(...gradedChunk);
-    }
-    
-    if (allGradedClaims.length !== allClaims.length) {
-         // Final sanity check
-         throw new Error(`Critical Error: Final claim count mismatch after chunking. Expected ${allClaims.length}, got ${allGradedClaims.length}. Please try again.`);
-    }
-
-    return {
-        originalInvention: invention,
-        analysisSummary: analysisContext.analysisSummary,
-        priorArt: analysisContext.priorArt,
-        gradedClaims: allGradedClaims,
-    };
+  };
 };
 
 
@@ -706,37 +583,62 @@ const addParagraphNumbers = (text: string, startNum: number): { numberedText: st
     return { numberedText: numberedLines.join('\n'), nextNum: currentNum };
 };
 
-export const generateNonProvisionalPatentApplication = async (analyzedInvention: AnalyzedInvention, selectedClaims: GradedClaim[], knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
+const getBestModeClaimsFromReport = (report: PatentAnalysisReport): string => {
+    const content = report.markdownContent;
+    const bestModeHeader = '### A. "Best Mode" Revised Claims';
+    const claimChartHeader = '### B. Claim Chart vs. Closest Art';
+    
+    const startIndex = content.indexOf(bestModeHeader);
+    if (startIndex === -1) return "No 'Best Mode' claims found in report.";
+
+    const contentAfterHeader = content.substring(startIndex + bestModeHeader.length);
+    const endIndex = contentAfterHeader.indexOf(claimChartHeader);
+
+    const claimsSection = (endIndex === -1 ? contentAfterHeader : contentAfterHeader.substring(0, endIndex)).trim();
+    return claimsSection;
+};
+
+export const generateNonProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport, knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
   if (!ai) throw new Error("Gemini API client is not initialized. Check API Key configuration.");
-  if (!analyzedInvention || !selectedClaims || selectedClaims.length === 0) throw new Error("Analyzed invention data and selected claims are required.");
+  if (!invention || !report) throw new Error("Invention and report data are required.");
 
   const bestPracticesGuide = await getBestPracticesGuideContent();
-  const selectedClaimsText = selectedClaims.map(c => c.text).join('\n');
+  const bestModeClaims = getBestModeClaimsFromReport(report);
+
   const basePromptContext = `
 **Source Invention Full Disclosure:**
-${analyzedInvention.originalInvention.sourceContent.substring(0, 150000)}
+${invention.sourceContent.substring(0, 150000)}
 
-**Prior Art Analysis Summary:**
-${analyzedInvention.analysisSummary}
-
-**User-Selected "Best Mode" Independent Claims to build upon:**
-${selectedClaimsText}
+**Analysis Report Summary & "Best Mode" Claims to build upon:**
+${report.markdownContent.substring(0, 150000)}
 `;
 
-  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **non-provisional patent application** based on the provided context.`;
+  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the world-class patent attorney from the guide. Your task is to generate ONE specific section of a **non-provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided.`;
   const contentSchema = { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ['content'] };
 
   // Generate all section content first
   const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. Be exhaustive and ensure full antecedent basis for all claim terms.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const claimsContent = await generateSection(`Generate ONLY the formal "CLAIMS" section. Take the user-selected claims, strengthen them, and add 3-5 dependent claims for each independent claim.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. Be exhaustive and ensure full antecedent basis for all claim terms, describing multiple embodiments as per the playbook.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  
+  // Use a more focused prompt for the claims section
+  const claimsPrompt = `Based on the provided context and the principles of the "Global Patent Playbook", generate ONLY the formal "CLAIMS" section for a non-provisional application.
+  
+  Your primary task is to use the "Best Mode" claims identified in the analysis report as the independent claims. Then, for each independent claim, you MUST add 3-5 logical, narrowing dependent claims that add further inventive limitations, following the hierarchical structure principle from the playbook.
+  
+  **"Best Mode" Claims from Report:**
+  ${bestModeClaims}
+  
+  **Full Context:**
+  ${basePromptContext}
+  `;
+  const claimsContent = await generateSection(claimsPrompt, contentSchema, systemInstruction);
   const abstractContent = await generateSection(`Generate ONLY the "ABSTRACT OF THE DISCLOSURE" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   
   // Create a combined context for better figure generation
   const fullSpecTextForFigGen = `${titleContent}\n${backgroundContent}\n${summaryContent}\n${descriptionContent}\n${claimsContent}`;
-  const figures = await generateFiguresForApplication(fullSpecTextForFigGen, analyzedInvention.originalInvention.sourceContent);
+  const figures = await generateFiguresForApplication(fullSpecTextForFigGen, invention.sourceContent);
 
   // Assemble the document programmatically and apply numbering in the correct order
   let markdownContent = ``;
@@ -777,37 +679,38 @@ ${selectedClaimsText}
   return { type: 'non-provisional', markdownContent, figures };
 };
 
-export const generateProvisionalPatentApplication = async (analyzedInvention: AnalyzedInvention, selectedClaims: GradedClaim[], knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
+export const generateProvisionalPatentApplication = async (invention: ExtractedInvention, report: PatentAnalysisReport, knowledgeBase: KnowledgeBaseEntry[]): Promise<PatentApplication> => {
   if (!ai) throw new Error("Gemini API client is not initialized.");
-  if (!analyzedInvention) throw new Error("Analyzed invention data is required.");
+  if (!invention || !report) throw new Error("Invention and report data are required.");
 
   const bestPracticesGuide = await getBestPracticesGuideContent();
-  const claimsToEmphasize = selectedClaims.map((c, i) => `Claim ${i + 1} (Grade: ${c.grade}): ${c.text}`).join('\n');
+  const bestModeClaims = getBestModeClaimsFromReport(report);
+
   const basePromptContext = `
 **Source Invention Full Disclosure:**
-${analyzedInvention.originalInvention.sourceContent.substring(0, 150000)}
+${invention.sourceContent.substring(0, 150000)}
 
-**Prior Art Analysis Summary:**
-${analyzedInvention.analysisSummary}
+**Analysis Report Summary & "Best Mode" Concepts to Emphasize:**
+${bestModeClaims}
 
-**"Best Mode" Concepts/Claims to Emphasize (with Patentability Grades):**
-${claimsToEmphasize}
+**Full Report for Additional Context:**
+${report.markdownContent.substring(0, 150000)}
 `;
 
-  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the seasoned patent agent from the guide. Your task is to generate ONE specific section of a **provisional patent application** based on the provided context.`;
+  const systemInstruction = `${bestPracticesGuide}\n\n**Your Role:** You are the seasoned patent agent from the guide. Your task is to generate ONE specific section of a **provisional patent application** based on the provided context, adhering strictly to the principles in the "Global Patent Playbook" provided.`;
   const contentSchema = { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ['content'] };
 
   // Generate all section content first
   const titleContent = await generateSection(`Generate ONLY the "TITLE OF THE INVENTION" for the application.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const backgroundContent = await generateSection(`Generate ONLY the "BACKGROUND OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const summaryContent = await generateSection(`Generate ONLY the "SUMMARY OF THE INVENTION" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. This is a provisional, so adopt a "kitchen sink" approach. Be exhaustive. Describe every component, function, step, and all possible alternative embodiments from the source material to provide maximum support for future claims. Weave in concepts from any weak claims as speculative possibilities.\n\n${basePromptContext}`, contentSchema, systemInstruction);
-  const embodimentsContent = await generateSection(`Generate ONLY a numbered list of "EMBODIMENTS" that read like claims. Only include concepts from claims graded 'A' or 'B'. Do not include a "CLAIMS" section heading.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const descriptionContent = await generateSection(`Generate ONLY the "DETAILED DESCRIPTION" section text. This is a provisional, so adopt a "kitchen sink" approach as described in the playbook. Be exhaustive. Describe every component, function, step, and all possible alternative embodiments from the source material to provide maximum support for future claims. Weave in concepts from any weak claims as speculative possibilities.\n\n${basePromptContext}`, contentSchema, systemInstruction);
+  const embodimentsContent = await generateSection(`Generate ONLY a numbered list of "EMBODIMENTS" that read like claims, based on the "Best Mode" claims from the report. Do not include a "CLAIMS" section heading.\n\n${basePromptContext}`, contentSchema, systemInstruction);
   const abstractContent = await generateSection(`Generate ONLY the "ABSTRACT OF THE DISCLOSURE" section text.\n\n${basePromptContext}`, contentSchema, systemInstruction);
 
   // Create a combined context for better figure generation
   const fullSpecTextForFigGen = `${titleContent}\n${backgroundContent}\n${summaryContent}\n${descriptionContent}\n${embodimentsContent}`;
-  const figures = await generateFiguresForApplication(fullSpecTextForFigGen, analyzedInvention.originalInvention.sourceContent);
+  const figures = await generateFiguresForApplication(fullSpecTextForFigGen, invention.sourceContent);
 
   // Assemble the document programmatically and apply numbering in the correct order
   let markdownContent = ``;

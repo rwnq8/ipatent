@@ -1,15 +1,19 @@
 
 
+
+
+
+
 import React from 'react';
 import { FileUpload } from './components/FileUpload';
 import { PatentApplicationDisplay } from './components/PatentApplicationDisplay';
+import { ReportDisplay } from './components/ReportDisplay';
 import { Spinner } from './components/Spinner';
 import { ManagedAlerts } from './components/ManagedAlerts';
 import { KnowledgeBase } from './components/KnowledgeBase';
 import { PortfolioSuggestions } from './components/PortfolioSuggestions';
 import { useAppManager } from './hooks/useAppManager';
 import { InventionSelection } from './components/InventionSelection';
-import { AnalysisWorkspace } from './components/AnalysisWorkspace';
 import { BestPracticesGuide } from './components/BestPracticesGuide';
 
 const IS_API_KEY_CONFIGURED = !!process.env.API_KEY;
@@ -52,12 +56,17 @@ export function App() {
 
         <KnowledgeBase
           ownedEntries={manager.ownedKnowledgeBase}
+          pinnedIdeas={manager.pinnedIdeas}
           discoveredEntries={manager.discoveredPriorArt}
           onRemoveEntry={manager.handleRemoveKbEntry}
-          onPinEntry={manager.handlePinPriorArt}
+          onUpdateEntry={manager.handleUpdateKbEntry}
           onExport={manager.handleExportKb}
           onImport={manager.handleImportKb}
-          onUpdateEntry={manager.handleUpdateKbEntry}
+          onPinEntry={manager.handlePinPriorArt}
+          onRemovePinnedIdea={manager.handleRemovePinnedIdea}
+          onUpdatePinnedIdea={manager.handleUpdatePinnedIdea}
+          onExportPinnedIdeas={manager.handleExportPinnedIdeas}
+          onImportPinnedIdeas={manager.handleImportPinnedIdeas}
           disabled={manager.isLoading}
         />
 
@@ -70,21 +79,22 @@ export function App() {
             disabled={manager.isLoading}
           />
         )}
-
-        {manager.status === 'claimsReadyForReview' && manager.analyzedInvention && (
-            <AnalysisWorkspace
-                analyzedInvention={manager.analyzedInvention}
-                onToggleClaim={manager.handleToggleGradedClaim}
-                onGenerateApplication={manager.handleGenerateApplication}
-                disabled={manager.isLoading}
+        
+        {manager.status === 'reportReady' && manager.patentAnalysisReport && (
+           <ReportDisplay
+              report={manager.patentAnalysisReport}
+              reportTitle={manager.selectedInvention?.title}
+              onStartNewAnalysis={manager.startNewAnalysis}
+              onGenerateApplication={manager.handleGenerateApplication}
+              disabled={manager.isLoading}
             />
         )}
-        
+
         {manager.status === 'applicationReady' && manager.patentApplication && (
            <PatentApplicationDisplay 
               application={manager.patentApplication} 
-              inventionTitle={manager.analyzedInvention?.originalInvention.title}
-              onGenerateNew={() => manager.goBackToClaimReview()}
+              inventionTitle={manager.selectedInvention?.title}
+              onGenerateNew={manager.startNewAnalysis}
               isGenerating={manager.isLoading}
             />
         )}

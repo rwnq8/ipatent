@@ -3,6 +3,8 @@
 
 
 
+
+
 import { useReducer, useCallback, useEffect } from 'react';
 import { processUploadedFiles } from '../services/fileParserService';
 import {
@@ -10,7 +12,7 @@ import {
   generateProvisionalPatentApplication,
   extractPortfolioEntriesFromBatch,
   extractInventions,
-  analyzeAndRefineInvention,
+  generatePatentabilityReport,
 } from '../services/geminiService';
 import {
   getKnowledgeBase,
@@ -18,9 +20,14 @@ import {
   exportKnowledgeBase,
   importKnowledgeBase,
   saveKnowledgeBase,
+  getPinnedIdeas,
+  savePinnedIdeas,
+  removePinnedIdea,
+  exportPinnedIdeas,
+  importPinnedIdeas,
 } from '../services/knowledgeBaseService';
 import { sanitizeMessage, normalizeApplicationNumber } from '../services/utils';
-import { AppState, Action, KnowledgeBaseEntry, KnowledgeBaseUpdateResult, GradedClaim } from '../types';
+import { AppState, Action, KnowledgeBaseEntry, KnowledgeBaseUpdateResult, PatentAnalysisReport, ExtractedInvention } from '../types';
 
 
 const IS_API_KEY_CONFIGURED = !!process.env.API_KEY;
@@ -30,10 +37,11 @@ const initialState: AppState = {
   uploadedFiles: [],
   processedFileContents: [],
   extractedInventions: null,
-  selectedInventionIndex: null,
-  analyzedInvention: null,
+  selectedInvention: null,
+  patentAnalysisReport: null,
   patentApplication: null,
   ownedKnowledgeBase: [],
+  pinnedIdeas: [],
   discoveredPriorArt: [],
   suggestedPortfolioEntries: [],
   error: null,
@@ -94,14 +102,36 @@ const mergeEntryIntoKb = (kb: KnowledgeBaseEntry[], entryToAdd: KnowledgeBaseEnt
     return { updatedKb, successMsg };
 };
 
-const getGradeStrength = (grade: string): number => {
-    const lowerGrade = grade.toLowerCase();
-    if (lowerGrade.includes('green')) return 4;
-    if (lowerGrade.includes('yellow')) return 3;
-    if (lowerGrade.includes('red')) return 2;
-    if (lowerGrade.includes('black')) return 1;
-    return 0;
+const parsePriorArtFromReport = (report: PatentAnalysisReport): KnowledgeBaseEntry[] => {
+    // This is a simplified regex-based parser. A more robust solution might involve
+    // asking the AI to provide a structured list of prior art alongside the markdown.
+    const priorArt: KnowledgeBaseEntry[] = [];
+    const priorArtSectionRegex = /## Section 2: Prior Art Search & Analysis([\s\S]*?)##/m;
+    const priorArtSectionMatch = report.markdownContent.match(priorArtSectionRegex);
+
+    if (priorArtSectionMatch) {
+        const priorArtSection = priorArtSectionMatch[1];
+        const artRegex = /\*\*(.*?)\*\s*`([^`]+)`/g;
+        let match;
+        while ((match = artRegex.exec(priorArtSection)) !== null) {
+            priorArt.push({
+                id: `kb-discovered-${Date.now()}-${Math.random()}`,
+                isOwner: false,
+                title: match[1].trim(),
+                applicationNumber: match[2].trim(),
+                filingDate: 'N/A',
+                type: 'non-provisional',
+                notes: 'Extracted from patentability report.',
+                files: [],
+                extractedClaims: [],
+                extractedEmbodiments: [],
+                isComplete: false,
+            });
+        }
+    }
+    return priorArt;
 };
+
 
 const appReducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
@@ -109,11 +139,12 @@ const appReducer = (state: AppState, action: Action): AppState => {
       return {
         ...initialState, // Reset state on new file selection
         ownedKnowledgeBase: state.ownedKnowledgeBase,
+        pinnedIdeas: state.pinnedIdeas,
         apiKeyErrorDismissed: state.apiKeyErrorDismissed,
         uploadedFiles: action.payload,
       };
     case 'PARSE_START':
-      return { ...state, status: 'parsing', error: null, success: null, extractedInventions: null, analyzedInvention: null, patentApplication: null };
+      return { ...state, status: 'parsing', error: null, success: null, extractedInventions: null, patentApplication: null };
     case 'PARSE_COMPLETE': {
       const { successfulFiles, errors } = action.payload;
       let errorMessage: string | null = null;
@@ -126,63 +157,10 @@ const appReducer = (state: AppState, action: Action): AppState => {
         return { ...state, status: 'extractingInventions' };
     case 'EXTRACT_INVENTIONS_SUCCESS':
         return { ...state, status: 'inventionsReadyForSelection', extractedInventions: action.payload };
-    case 'SELECT_INVENTION':
-        return { ...state, selectedInventionIndex: action.payload };
-    case 'ANALYZE_INVENTION_START':
-        return { ...state, status: 'analyzingInvention' };
-    case 'ANALYZE_INVENTION_SUCCESS': {
-        const processedAnalysis = JSON.parse(JSON.stringify(action.payload));
-        
-        // Auto-apply revisions for weak claims
-        processedAnalysis.gradedClaims.forEach((claim: GradedClaim) => {
-            if (claim.suggestedRevision && claim.revisionJustification) {
-                const grade = claim.grade.toLowerCase();
-                 if (grade.includes('red') || grade.includes('black')) {
-                    claim.originalText = claim.text;
-                    claim.originalJustification = claim.justification;
-                    claim.text = claim.suggestedRevision;
-                    claim.justification = claim.revisionJustification;
-                    claim.grade = "B (Yellow - Moderate) [Auto-Revised]";
-                    delete claim.suggestedRevision;
-                    delete claim.revisionJustification;
-                }
-            }
-        });
-
-        // Sort claims by strength
-        processedAnalysis.gradedClaims.sort((a: GradedClaim, b: GradedClaim) => {
-            return getGradeStrength(b.grade) - getGradeStrength(a.grade);
-        });
-        
-        // The `art` object from the API will only have a subset of properties.
-        // We must manually construct a full `KnowledgeBaseEntry` to avoid downstream errors.
-        const discoveredPriorArt: KnowledgeBaseEntry[] = (processedAnalysis.priorArt || []).map((art: Partial<KnowledgeBaseEntry>) => ({
-            id: `kb-discovered-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            isOwner: false,
-            title: art.title || 'Untitled Prior Art',
-            applicationNumber: art.applicationNumber || 'N/A',
-            filingDate: art.filingDate || '',
-            type: art.type || 'non-provisional',
-            notes: art.notes || '',
-            priorityTo: art.priorityTo,
-            // Ensure array properties are always initialized
-            files: art.files || [],
-            extractedClaims: art.extractedClaims || [],
-            extractedEmbodiments: art.extractedEmbodiments || [],
-            isComplete: typeof art.isComplete === 'boolean' ? art.isComplete : false,
-        }));
-
-        return { ...state, status: 'claimsReadyForReview', analyzedInvention: processedAnalysis, discoveredPriorArt };
-    }
-    case 'TOGGLE_GRADED_CLAIM': {
-        if (!state.analyzedInvention) return state;
-        const newAnalyzedInvention = JSON.parse(JSON.stringify(state.analyzedInvention));
-        // The index is now relative to the *sorted* array in the state
-        const claim = newAnalyzedInvention.gradedClaims[action.payload];
-        if (claim) {
-            claim.selected = !claim.selected;
-        }
-        return { ...state, analyzedInvention: newAnalyzedInvention };
+    case 'SELECT_INVENTION': {
+        if (!state.extractedInventions) return state;
+        const selectedInvention = state.extractedInventions[action.payload] || null;
+        return { ...state, selectedInvention, status: 'generatingReport' };
     }
     case 'SUGGESTIONS_READY':
         return { ...state, suggestedPortfolioEntries: action.payload };
@@ -213,24 +191,37 @@ const appReducer = (state: AppState, action: Action): AppState => {
       const entryToPin = state.discoveredPriorArt.find(e => e.id === action.payload);
       if (!entryToPin) return state;
 
-      const newOwnedEntry: KnowledgeBaseEntry = { ...entryToPin, isOwner: true };
-      
-      const { updatedKb, successMsg } = mergeEntryIntoKb(state.ownedKnowledgeBase, newOwnedEntry, 'pin');
-      saveKnowledgeBase(updatedKb);
+      const newPinnedIdea: KnowledgeBaseEntry = { ...entryToPin, isOwner: true, priorityTo: undefined };
+      const updatedIdeas = [...state.pinnedIdeas, newPinnedIdea];
+      savePinnedIdeas(updatedIdeas);
       
       const newDiscoveredPriorArt = state.discoveredPriorArt.filter(e => e.id !== action.payload);
       
       return {
           ...state,
-          ownedKnowledgeBase: updatedKb,
+          pinnedIdeas: getPinnedIdeas(),
           discoveredPriorArt: newDiscoveredPriorArt,
-          success: successMsg,
+          success: `"${newPinnedIdea.title}" pinned as an idea for exploration.`,
       };
     }
+    case 'GENERATE_REPORT_START':
+      return { ...state, status: 'generatingReport', error: null, success: null };
+    case 'GENERATE_REPORT_SUCCESS':
+      const discoveredPriorArt = parsePriorArtFromReport(action.payload);
+      return { ...state, status: 'reportReady', patentAnalysisReport: action.payload, discoveredPriorArt, success: "Patentability report generated successfully." };
     case 'GENERATE_APP_START':
       return { ...state, status: 'generatingApplication', error: null, success: null };
     case 'GENERATE_APP_SUCCESS':
       return { ...state, status: 'applicationReady', patentApplication: action.payload, success: `Draft of ${action.payload.type} application generated successfully.` };
+    case 'START_NEW_ANALYSIS':
+        return { 
+            ...state,
+            status: 'inventionsReadyForSelection', 
+            patentApplication: null, 
+            patentAnalysisReport: null,
+            selectedInvention: null,
+            discoveredPriorArt: [],
+        };
     case 'REMOVE_KB_ENTRY': {
         const updatedKb = removeKnowledgeBaseEntry(action.payload);
         return { ...state, ownedKnowledgeBase: updatedKb, success: "Portfolio entry and its descendants removed." };
@@ -246,9 +237,24 @@ const appReducer = (state: AppState, action: Action): AppState => {
         saveKnowledgeBase(updatedKb);
         return { ...state, ownedKnowledgeBase: getKnowledgeBase(), success: `Entry "${action.payload.title}" updated.` };
     }
+    case 'INITIALIZE_PINNED_IDEAS':
+        return { ...state, pinnedIdeas: action.payload };
+    case 'REMOVE_PINNED_IDEA': {
+        const updatedIdeas = removePinnedIdea(action.payload);
+        return { ...state, pinnedIdeas: updatedIdeas, success: "Pinned idea removed." };
+    }
+    case 'UPDATE_PINNED_IDEA': {
+        const updatedIdeas = state.pinnedIdeas.map(idea => idea.id === action.payload.id ? action.payload : idea);
+        savePinnedIdeas(updatedIdeas);
+        return { ...state, pinnedIdeas: getPinnedIdeas(), success: `Pinned idea "${action.payload.title}" updated.` };
+    }
+    case 'IMPORT_PINNED_IDEAS_SUCCESS': {
+        const { updatedKb, addedCount } = action.payload;
+        return { ...state, pinnedIdeas: updatedKb, success: `Pinned ideas imported. ${addedCount} new ideas added.`, error: null };
+    }
     case 'SET_ASYNC_ERROR': {
       const message = sanitizeMessage(action.payload);
-      return { ...state, status: 'idle', error: message, selectedInventionIndex: null, analyzedInvention: null };
+      return { ...state, status: 'idle', error: message, selectedInvention: null };
     }
     case 'SET_ERROR':
       return { ...state, status: 'idle', error: action.payload };
@@ -266,6 +272,7 @@ export const useAppManager = () => {
 
   useEffect(() => {
     dispatch({ type: 'INITIALIZE_KB', payload: getKnowledgeBase() });
+    dispatch({ type: 'INITIALIZE_PINNED_IDEAS', payload: getPinnedIdeas() });
   }, []);
   
   useEffect(() => {
@@ -320,56 +327,47 @@ export const useAppManager = () => {
     processAndExtract();
     
   }, [state.uploadedFiles]);
+  
+  useEffect(() => {
+      if (state.status === 'generatingReport' && state.selectedInvention) {
+          const runReportGeneration = async () => {
+              try {
+                  const report = await generatePatentabilityReport(state.selectedInvention!, state.ownedKnowledgeBase);
+                  dispatch({ type: 'GENERATE_REPORT_SUCCESS', payload: report });
+              } catch (err) {
+                  dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
+              }
+          };
+          runReportGeneration();
+      }
+  }, [state.status, state.selectedInvention, state.ownedKnowledgeBase]);
+
 
   const handleFilesSelected = useCallback((files: File[]) => dispatch({ type: 'SET_FILES', payload: files }), []);
 
-  const handleInventionSelection = useCallback(async (index: number) => {
-    if (!state.extractedInventions) return;
+  const handleInventionSelection = useCallback((index: number) => {
     dispatch({ type: 'SELECT_INVENTION', payload: index });
-    dispatch({ type: 'ANALYZE_INVENTION_START' });
-    try {
-      const inventionToAnalyze = state.extractedInventions[index];
-      const result = await analyzeAndRefineInvention(inventionToAnalyze, state.ownedKnowledgeBase);
-      dispatch({ type: 'ANALYZE_INVENTION_SUCCESS', payload: result });
-    } catch (err) {
-      dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
-    }
-  }, [state.extractedInventions, state.ownedKnowledgeBase]);
-
-  const handleToggleGradedClaim = useCallback((claimIndex: number) => {
-    dispatch({ type: 'TOGGLE_GRADED_CLAIM', payload: claimIndex });
   }, []);
-  
+
   const handleGenerateApplication = useCallback(async (type: 'provisional' | 'non-provisional') => {
-    if (!state.analyzedInvention) {
-        dispatch({ type: 'SET_ERROR', payload: "An analyzed invention is required." });
+    if (!state.selectedInvention || !state.patentAnalysisReport) {
+        dispatch({ type: 'SET_ERROR', payload: "An analyzed invention and report are required." });
         return;
     }
-    const selectedClaims: GradedClaim[] = state.analyzedInvention.gradedClaims
-        .filter(c => c.selected);
-
-    if (selectedClaims.length === 0 && type === 'non-provisional') {
-        dispatch({ type: 'SET_ERROR', payload: "At least one graded claim must be selected to generate a non-provisional application." });
-        return;
-    }
-
+    
     dispatch({ type: 'GENERATE_APP_START' });
     try {
       const generator = type === 'provisional' ? generateProvisionalPatentApplication : generateNonProvisionalPatentApplication;
-      const generatedApplication = await generator(state.analyzedInvention, selectedClaims, state.ownedKnowledgeBase);
+      const generatedApplication = await generator(state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase);
       dispatch({ type: 'GENERATE_APP_SUCCESS', payload: generatedApplication });
     } catch (err) {
       dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
     }
-  }, [state.analyzedInvention, state.ownedKnowledgeBase]);
+  }, [state.selectedInvention, state.patentAnalysisReport, state.ownedKnowledgeBase]);
 
-  const goBackToClaimReview = useCallback(() => {
-    if(state.analyzedInvention) {
-        // Reset application but keep the analysis to allow generating the other type
-        dispatch({ type: 'GENERATE_APP_SUCCESS', payload: { type: 'provisional', markdownContent: '' } }); // hack to clear application
-        dispatch({ type: 'ANALYZE_INVENTION_SUCCESS', payload: state.analyzedInvention });
-    }
-  }, [state.analyzedInvention]);
+  const startNewAnalysis = useCallback(() => {
+    dispatch({ type: 'START_NEW_ANALYSIS' });
+  }, []);
 
   const handleRemoveKbEntry = useCallback((id: string) => dispatch({ type: 'REMOVE_KB_ENTRY', payload: id }), []);
   
@@ -395,6 +393,13 @@ export const useAppManager = () => {
   const handleImportKb = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!file.name.startsWith('patent_portfolio_knowledge_base_')) {
+      dispatch({ type: 'SET_ERROR', payload: `Invalid file. Please select a portfolio file exported from this app (e.g., "patent_portfolio_knowledge_base_....json").` });
+      event.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -411,7 +416,56 @@ export const useAppManager = () => {
   }, []);
 
   const handleUpdateKbEntry = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_KB_ENTRY', payload: entry }), []);
+  
+  // --- Pinned Ideas Handlers ---
   const handlePinPriorArt = useCallback((id: string) => dispatch({ type: 'PIN_PRIOR_ART', payload: id }), []);
+  const handleRemovePinnedIdea = useCallback((id: string) => dispatch({ type: 'REMOVE_PINNED_IDEA', payload: id }), []);
+  const handleUpdatePinnedIdea = useCallback((entry: KnowledgeBaseEntry) => dispatch({ type: 'UPDATE_PINNED_IDEA', payload: entry }), []);
+
+  const handleExportPinnedIdeas = useCallback(() => {
+    try {
+      const jsonString = exportPinnedIdeas();
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = `pinned_ideas_${timestamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      dispatch({ type: 'SET_SUCCESS', payload: "Pinned ideas exported successfully." });
+    } catch (err) {
+      dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
+    }
+  }, []);
+
+  const handleImportPinnedIdeas = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.startsWith('pinned_ideas_')) {
+      dispatch({ type: 'SET_ERROR', payload: `Invalid file. Please select a pinned ideas file exported from this app (e.g., "pinned_ideas_....json").` });
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        if (!text) throw new Error("File is empty.");
+        const result = importPinnedIdeas(text);
+        dispatch({ type: 'IMPORT_PINNED_IDEAS_SUCCESS', payload: result });
+      } catch (err) {
+        dispatch({ type: 'SET_ASYNC_ERROR', payload: err });
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }, []);
+
   const handleAcceptSuggestion = useCallback((index: number) => dispatch({ type: 'ACCEPT_SUGGESTION', payload: index }), []);
   const handleDismissSuggestion = useCallback((index: number) => dispatch({ type: 'DISMISS_SUGGESTION', payload: index }), []);
   const handleDismissAllSuggestions = useCallback(() => dispatch({ type: 'DISMISS_ALL_SUGGESTIONS' }), []);
@@ -420,13 +474,13 @@ export const useAppManager = () => {
     switch (status) {
         case 'parsing': return 'Parsing files...';
         case 'extractingInventions': return 'Identifying distinct inventions from documents...';
-        case 'analyzingInvention': return `Performing deep analysis... This includes a prior art search and may take several minutes.`;
+        case 'generatingReport': return 'Performing deep analysis and generating patentability report... This may take several minutes.';
         case 'generatingApplication': return 'Generating application draft... This may take several minutes.';
         default: return '';
     }
   }
 
-  const isLoading = ['parsing', 'extractingInventions', 'analyzingInvention', 'generatingApplication'].includes(state.status);
+  const isLoading = ['parsing', 'extractingInventions', 'generatingReport', 'generatingApplication'].includes(state.status);
 
   return {
     // State
@@ -436,12 +490,14 @@ export const useAppManager = () => {
     error: state.error,
     success: state.success,
     apiKeyErrorDismissed: state.apiKeyErrorDismissed,
+    patentAnalysisReport: state.patentAnalysisReport,
     patentApplication: state.patentApplication,
     ownedKnowledgeBase: state.ownedKnowledgeBase,
+    pinnedIdeas: state.pinnedIdeas,
     discoveredPriorArt: state.discoveredPriorArt,
     suggestedPortfolioEntries: state.suggestedPortfolioEntries,
     extractedInventions: state.extractedInventions,
-    analyzedInvention: state.analyzedInvention,
+    selectedInvention: state.selectedInvention,
     
     // Setters
     setApiKeyErrorDismissed: useCallback(() => dispatch({ type: 'DISMISS_API_KEY_ERROR' }), []),
@@ -451,9 +507,8 @@ export const useAppManager = () => {
     // Handlers
     handleFilesSelected,
     handleInventionSelection,
-    handleToggleGradedClaim,
     handleGenerateApplication,
-    goBackToClaimReview,
+    startNewAnalysis,
     handleRemoveKbEntry,
     handleExportKb,
     handleImportKb,
@@ -462,5 +517,9 @@ export const useAppManager = () => {
     handleAcceptSuggestion,
     handleDismissSuggestion,
     handleDismissAllSuggestions,
+    handleRemovePinnedIdea,
+    handleUpdatePinnedIdea,
+    handleExportPinnedIdeas,
+    handleImportPinnedIdeas,
   };
 };

@@ -70,11 +70,11 @@ export interface KnowledgeBaseUpdateResult {
 // --- Types for unused components being fixed ---
 export interface GroundingChunk {
   web?: {
-    uri: string;
+    uri?: string;
     title?: string;
   };
   retrievedContext?: {
-    text: string;
+    text?: string;
   };
   retrievalQuery?: string;
 }
@@ -83,7 +83,7 @@ export interface PatentAnalysisReport {
   markdownContent: string;
   groundingMetadata?: {
     groundingChunks?: GroundingChunk[];
-    searchQueries?: string[];
+    webSearchQueries?: string[];
   };
 }
 
@@ -103,25 +103,6 @@ export interface ExtractedInvention {
   sourceContent: string;
 }
 
-export interface GradedClaim {
-    text: string;
-    type: 'explicit' | 'inferred';
-    grade: string;
-    justification: string;
-    selected: boolean;
-    suggestedRevision?: string;
-    revisionJustification?: string;
-    originalText?: string;
-    originalJustification?: string;
-}
-
-export interface AnalyzedInvention {
-    originalInvention: ExtractedInvention;
-    gradedClaims: GradedClaim[];
-    priorArt: Omit<KnowledgeBaseEntry, 'id'>[];
-    analysisSummary: string;
-}
-
 // --- State Machine Types for useAppManager ---
 
 export type AppStatus =
@@ -129,8 +110,8 @@ export type AppStatus =
   | 'parsing'
   | 'extractingInventions'
   | 'inventionsReadyForSelection'
-  | 'analyzingInvention'
-  | 'claimsReadyForReview'
+  | 'generatingReport'
+  | 'reportReady'
   | 'generatingApplication'
   | 'applicationReady';
 
@@ -140,10 +121,11 @@ export interface AppState {
   uploadedFiles: File[];
   processedFileContents: ProcessedFile[];
   extractedInventions: ExtractedInvention[] | null;
-  selectedInventionIndex: number | null;
-  analyzedInvention: AnalyzedInvention | null;
+  selectedInvention: ExtractedInvention | null;
+  patentAnalysisReport: PatentAnalysisReport | null;
   patentApplication: PatentApplication | null;
   ownedKnowledgeBase: KnowledgeBaseEntry[];
+  pinnedIdeas: KnowledgeBaseEntry[];
   discoveredPriorArt: KnowledgeBaseEntry[];
   suggestedPortfolioEntries: SuggestedPortfolioEntry[];
   error: string | null;
@@ -158,20 +140,24 @@ export type Action =
   | { type: 'EXTRACT_INVENTIONS_START' }
   | { type: 'EXTRACT_INVENTIONS_SUCCESS'; payload: ExtractedInvention[] }
   | { type: 'SELECT_INVENTION'; payload: number }
-  | { type: 'ANALYZE_INVENTION_START' }
-  | { type: 'ANALYZE_INVENTION_SUCCESS'; payload: AnalyzedInvention }
-  | { type: 'TOGGLE_GRADED_CLAIM'; payload: number }
   | { type: 'SUGGESTIONS_READY'; payload: SuggestedPortfolioEntry[] }
   | { type: 'ACCEPT_SUGGESTION'; payload: number }
   | { type: 'DISMISS_SUGGESTION'; payload: number }
   | { type: 'DISMISS_ALL_SUGGESTIONS' }
   | { type: 'PIN_PRIOR_ART'; payload: string }
+  | { type: 'GENERATE_REPORT_START' }
+  | { type: 'GENERATE_REPORT_SUCCESS'; payload: PatentAnalysisReport }
   | { type: 'GENERATE_APP_START' }
   | { type: 'GENERATE_APP_SUCCESS'; payload: PatentApplication }
+  | { type: 'START_NEW_ANALYSIS' }
   | { type: 'REMOVE_KB_ENTRY'; payload: string }
   | { type: 'IMPORT_KB_SUCCESS'; payload: KnowledgeBaseUpdateResult }
   | { type: 'INITIALIZE_KB'; payload: KnowledgeBaseEntry[] }
   | { type: 'UPDATE_KB_ENTRY'; payload: KnowledgeBaseEntry }
+  | { type: 'INITIALIZE_PINNED_IDEAS'; payload: KnowledgeBaseEntry[] }
+  | { type: 'REMOVE_PINNED_IDEA'; payload: string }
+  | { type: 'UPDATE_PINNED_IDEA'; payload: KnowledgeBaseEntry }
+  | { type: 'IMPORT_PINNED_IDEAS_SUCCESS'; payload: KnowledgeBaseUpdateResult }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_ASYNC_ERROR'; payload: unknown }
   | { type: 'SET_SUCCESS'; payload: string | null }

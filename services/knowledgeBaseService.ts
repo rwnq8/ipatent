@@ -2,6 +2,7 @@ import { KnowledgeBaseEntry, KnowledgeBaseUpdateResult } from '../types';
 import { normalizeApplicationNumber } from './utils';
 
 const KB_STORAGE_KEY = 'patentAnalyzerKnowledgeBase';
+const PINNED_IDEAS_STORAGE_KEY = 'patentAnalyzerPinnedIdeas';
 
 /**
  * Merges duplicate entries in a knowledge base. It uses a normalized application
@@ -103,13 +104,14 @@ const deduplicateKnowledgeBase = (kb: KnowledgeBaseEntry[]): KnowledgeBaseEntry[
     return dedupedList;
 };
 
+// --- Main Knowledge Base (Portfolio) Functions ---
+
 export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
   try {
     const rawData = localStorage.getItem(KB_STORAGE_KEY);
     if (!rawData) return [];
     const kb = JSON.parse(rawData);
     if (Array.isArray(kb)) {
-      // Migrate data to ensure all entries have the new fields with default values
       const migratedKb = kb
         .map((item): KnowledgeBaseEntry | null => {
           if (typeof item === 'object' && item !== null && 'id' in item && 'isOwner' in item) {
@@ -126,7 +128,6 @@ export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
               isComplete: typeof item.isComplete === 'boolean' ? item.isComplete : false,
               notes: item.notes || '',
             };
-            // Conditionally add optional property to match the type
             if (item.priorityTo) {
                 newEntry.priorityTo = item.priorityTo;
             }
@@ -136,7 +137,6 @@ export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
         })
         .filter((item): item is KnowledgeBaseEntry => item !== null);
 
-      // CRITICAL: De-duplicate the loaded data to consolidate entries.
       return deduplicateKnowledgeBase(migratedKb);
     }
     return [];
@@ -149,7 +149,6 @@ export const getKnowledgeBase = (): KnowledgeBaseEntry[] => {
 
 export const saveKnowledgeBase = (kb: KnowledgeBaseEntry[]): void => {
   try {
-    // CRITICAL: De-duplicate before saving to ensure data integrity.
     const cleanKb = deduplicateKnowledgeBase(kb);
     const ownedEntries = cleanKb.filter(e => e.isOwner);
     localStorage.setItem(KB_STORAGE_KEY, JSON.stringify(ownedEntries));
@@ -158,63 +157,12 @@ export const saveKnowledgeBase = (kb: KnowledgeBaseEntry[]): void => {
   }
 };
 
-const mergeKnowledgeBases = (existingKb: KnowledgeBaseEntry[], newEntries: Omit<KnowledgeBaseEntry, 'id'>[]): KnowledgeBaseUpdateResult => {
-  const updatedKb = [...existingKb];
-  const conflicts: string[] = [];
-  let addedCount = 0;
-  let updatedCount = 0;
-
-  const existingAppNumbers = new Map(updatedKb.map(e => [normalizeApplicationNumber(e.applicationNumber), e]));
-
-  for (const newEntryData of newEntries) {
-    const normalizedNewAppNum = normalizeApplicationNumber(newEntryData.applicationNumber);
-    if (normalizedNewAppNum && existingAppNumbers.has(normalizedNewAppNum)) {
-      // Entry exists, let the main de-duplication handle the merge.
-      // We just add it to the list to be processed.
-    } else {
-      addedCount++;
-    }
-    // Add all new entries to be de-duplicated later.
-    const newEntry: KnowledgeBaseEntry = {
-        ...newEntryData,
-        id: `kb-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-    };
-    updatedKb.push(newEntry);
-  }
-
-  // The final de-duplication will resolve conflicts and merge data.
-  const finalKb = deduplicateKnowledgeBase(updatedKb);
-  
-  // Note: addedCount/updatedCount might be less accurate now, but the outcome is a clean KB.
-  // A simple way to recount:
-  const finalCount = finalKb.length;
-  const initialCount = existingKb.length;
-  if(finalCount > initialCount) {
-    addedCount = finalCount - initialCount;
-    updatedCount = initialCount - (new Set([...existingKb.map(e => e.id), ...finalKb.map(e => e.id)]).size - finalCount);
-  } else {
-    addedCount = 0;
-    updatedCount = finalCount;
-  }
-  
-  return { updatedKb: finalKb, addedCount, updatedCount, conflicts };
-};
-
-export const addSingleKnowledgeBaseEntry = (entry: KnowledgeBaseEntry): KnowledgeBaseEntry[] => {
-  const kb = getKnowledgeBase();
-  const updatedKb = [...kb, { ...entry, isOwner: true }];
-  saveKnowledgeBase(updatedKb); // saveKnowledgeBase will handle de-duplication
-  return getKnowledgeBase(); // return the clean, re-read version
-};
-
 export const removeKnowledgeBaseEntry = (id: string): KnowledgeBaseEntry[] => {
   let kb = getKnowledgeBase();
   const entryToRemove = kb.find(e => e.id === id);
   if(!entryToRemove) return kb;
 
-  // Remove the entry itself
   kb = kb.filter(entry => entry.id !== id);
-  // Also remove any children that claim priority to it
   kb = kb.filter(entry => entry.priorityTo !== id);
 
   saveKnowledgeBase(kb);
@@ -222,7 +170,7 @@ export const removeKnowledgeBaseEntry = (id: string): KnowledgeBaseEntry[] => {
 };
 
 export const exportKnowledgeBase = (): string => {
-    const kb = getKnowledgeBase(); // Ensures exported data is clean
+    const kb = getKnowledgeBase();
     return JSON.stringify(kb, null, 2);
 };
 
@@ -253,7 +201,6 @@ export const importKnowledgeBase = (jsonString: string): KnowledgeBaseUpdateResu
         notes: item.notes || '',
     }));
     
-    // Combine and let the save operation handle the final de-duplication
     const combinedKb = [...currentKb, ...validatedNewEntries.map(e => ({...e, id: `import-${Date.now()}-${Math.random()}`}))];
     saveKnowledgeBase(combinedKb);
     const finalKb = getKnowledgeBase();
@@ -261,4 +208,81 @@ export const importKnowledgeBase = (jsonString: string): KnowledgeBaseUpdateResu
     const addedCount = finalKb.length - currentKb.length;
 
     return { updatedKb: finalKb, addedCount: Math.max(0, addedCount), updatedCount: 0, conflicts: [] };
+};
+
+
+// --- Pinned Ideas Functions ---
+
+export const getPinnedIdeas = (): KnowledgeBaseEntry[] => {
+  try {
+    const rawData = localStorage.getItem(PINNED_IDEAS_STORAGE_KEY);
+    if (!rawData) return [];
+    const ideas = JSON.parse(rawData);
+    if (Array.isArray(ideas)) {
+      return deduplicateKnowledgeBase(ideas);
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to load pinned ideas from localStorage", error);
+    localStorage.removeItem(PINNED_IDEAS_STORAGE_KEY);
+    return [];
+  }
+};
+
+export const savePinnedIdeas = (ideas: KnowledgeBaseEntry[]): void => {
+  try {
+    const cleanIdeas = deduplicateKnowledgeBase(ideas);
+    localStorage.setItem(PINNED_IDEAS_STORAGE_KEY, JSON.stringify(cleanIdeas));
+  } catch (error) {
+    console.error("Failed to save pinned ideas to localStorage", error);
+  }
+};
+
+export const removePinnedIdea = (id: string): KnowledgeBaseEntry[] => {
+  let ideas = getPinnedIdeas();
+  ideas = ideas.filter(idea => idea.id !== id);
+  savePinnedIdeas(ideas);
+  return ideas;
+};
+
+export const exportPinnedIdeas = (): string => {
+    const ideas = getPinnedIdeas();
+    return JSON.stringify(ideas, null, 2);
+};
+
+export const importPinnedIdeas = (jsonString: string): KnowledgeBaseUpdateResult => {
+    const currentIdeas = getPinnedIdeas();
+    let importedEntries;
+    try {
+        importedEntries = JSON.parse(jsonString);
+        if (!Array.isArray(importedEntries)) {
+            throw new Error("Imported data is not a valid JSON array.");
+        }
+    } catch (error) {
+        console.error("Failed to parse imported ideas:", error);
+        throw new Error(`Import failed during parsing: ${(error as Error).message}`);
+    }
+
+    const validatedNewEntries: KnowledgeBaseEntry[] = importedEntries.map(item => ({
+        id: item.id || `import-idea-${Date.now()}-${Math.random()}`,
+        isOwner: true, // Treat as "owned" within the pinned list
+        type: item.type || 'non-provisional',
+        title: item.title || 'Untitled',
+        applicationNumber: item.applicationNumber || 'N/A',
+        filingDate: item.filingDate || '',
+        priorityTo: undefined, // Pinned ideas don't have priority claims
+        files: Array.isArray(item.files) ? item.files : [],
+        extractedClaims: Array.isArray(item.extractedClaims) ? item.extractedClaims : [],
+        extractedEmbodiments: Array.isArray(item.extractedEmbodiments) ? item.extractedEmbodiments : [],
+        isComplete: typeof item.isComplete === 'boolean' ? item.isComplete : false,
+        notes: item.notes || '',
+    }));
+    
+    const combinedIdeas = [...currentIdeas, ...validatedNewEntries];
+    savePinnedIdeas(combinedIdeas);
+    const finalIdeas = getPinnedIdeas();
+
+    const addedCount = finalIdeas.length - currentIdeas.length;
+
+    return { updatedKb: finalIdeas, addedCount: Math.max(0, addedCount), updatedCount: 0, conflicts: [] };
 };
