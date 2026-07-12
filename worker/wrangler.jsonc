@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "ipatent-api",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-07-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ipatent-db",
+      "database_id": "19cc87d6-4207-477c-bf8c-94fb231b8965"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "ipatent"
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "ipatent-disclosures"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "routes": [
+    {
+      "pattern": "ipatent.me/api/*",
+      "zone_name": "ipatent.me"
+    }
+  ],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ipatent.me — Protect Your Invention Idea</title>
+<meta name="description" content="Have an invention idea? Describe it here and we'll help you create a professional disclosure document. No patent experience needed.">
+<meta name="theme-color" content="#1e3a5f">
+<meta property="og:title" content="ipatent.me — Protect Your Invention Idea">
+<meta property="og:description" content="Describe your idea and we'll help you draft a professional disclosure. Free, simple, no experience needed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ipatent.me">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fcfcf9;--surface:#fff;--surface-alt:#f5f4f0;--text:#1a1a2e;
+  --text-secondary:#5c6370;--muted:#8b919e;--accent:#1e3a5f;
+  --accent-light:#e8edf5;--accent-cta:#2563eb;--accent-cta-hover:#1d4ed8;
+  --border:#e2e4e9;--border-light:#f0f1f3;--danger:#dc2626;--danger-bg:#fef2f2;
+  --success:#059669;--font-display:'Playfair Display',Georgia,serif;
+  --font-body:'DM Sans',-apple-system,sans-serif;--max-w:780px;
+  --radius:10px;--radius-sm:6px;--shadow-sm:0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.06);--transition:200ms cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:1rem;line-height:1.65;min-height:100vh}
+::selection{background:var(--accent-light);color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent-cta);outline-offset:2px;border-radius:var(--radius-sm)}
+.bg-texture{position:fixed;inset:0;background:linear-gradient(to bottom,transparent,rgba(30,58,95,.012)),radial-gradient(ellipse at 20% 0%,rgba(37,99,235,.03),transparent 50%),radial-gradient(ellipse at 80% 100%,rgba(30,58,95,.02),transparent 50%);pointer-events:none;z-index:0}
+.container{position:relative;z-index:1;max-width:var(--max-w);margin:0 auto;padding:2rem 1.5rem 4rem}
+
+header{text-align:center;padding:2.5rem 0 1.5rem;border-bottom:1px solid var(--border-light);margin-bottom:1.5rem}
+.logo{font-family:var(--font-display);font-size:2.4rem;font-weight:700;letter-spacing:-.02em;color:var(--accent);line-height:1.15}
+.logo-accent{color:var(--accent-cta);font-weight:400;font-style:italic}
+.tagline{color:var(--text-secondary);font-size:.95rem;margin-top:.4rem;max-width:480px;margin-left:auto;margin-right:auto}
+
+.tabs{display:flex;gap:.25rem;margin-bottom:1.5rem;border-bottom:2px solid var(--border-light)}
+.tab{padding:.65rem 1.25rem;font-size:.85rem;font-weight:500;cursor:pointer;color:var(--text-secondary);border:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all var(--transition);background:none;font-family:var(--font-body);border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+.tab:hover{color:var(--text);background:var(--surface-alt)}
+.tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent);background:var(--accent-light)}
+
+/* ── One big friendly textarea ── */
+.idea-box{width:100%;min-height:280px;background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:1.5rem 1.5rem;font-family:var(--font-body);font-size:1.05rem;line-height:1.8;color:var(--text);resize:vertical;transition:border-color var(--transition),box-shadow var(--transition)}
+.idea-box:hover{border-color:#c4c8d0}
+.idea-box:focus{outline:none;border-color:var(--accent-cta);box-shadow:0 0 0 4px rgba(37,99,235,.08)}
+.idea-box::placeholder{color:var(--muted);opacity:.55;font-size:.98rem}
+
+.hint-text{font-size:.8rem;color:var(--muted);margin-top:.35rem;margin-bottom:0;font-style:italic}
+
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.8rem 1.75rem;border:none;border-radius:var(--radius);font-size:.95rem;font-weight:600;cursor:pointer;transition:all var(--transition);font-family:var(--font-body);white-space:nowrap}
+.btn-primary{background:var(--accent-cta);color:#fff;box-shadow:0 2px 8px rgba(37,99,235,.25)}
+.btn-primary:hover{background:var(--accent-cta-hover);transform:translateY(-1px);box-shadow:0 6px 16px rgba(37,99,235,.3)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-secondary{background:var(--surface);color:var(--text);border:1.5px solid var(--border)}
+.btn-secondary:hover{background:var(--surface-alt)}
+.btn-sm{padding:.45rem 1rem;font-size:.8rem;border-radius:var(--radius-sm)}
+.btn-row{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.25rem}
+
+/* Chat */
+#chat-panel{display:none;margin-top:1.5rem;animation:fadeIn .4s ease}
+#chat-panel.show{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.chat-messages{display:flex;flex-direction:column;gap:.85rem;margin-bottom:1.25rem;max-height:450px;overflow-y:auto;padding:.5rem 0}
+.chat-msg{max-width:88%;padding:.75rem 1rem;border-radius:var(--radius);font-size:.88rem;line-height:1.55;animation:fadeIn .3s ease;word-wrap:break-word}
+.chat-msg.system{background:var(--accent-light);color:var(--accent);align-self:flex-start;border-bottom-left-radius:4px}
+.chat-msg.user{background:var(--accent-cta);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.chat-msg.thinking{background:var(--surface-alt);color:var(--muted);align-self:flex-start;font-style:italic}
+.chat-input-row{display:flex;gap:.5rem}
+.chat-input{flex:1;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:.75rem 1rem;font-size:.9rem;font-family:var(--font-body);color:var(--text);transition:border-color var(--transition)}
+.chat-input:focus{outline:none;border-color:var(--accent-cta);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+
+.result{display:none;margin-top:1.5rem;animation:fadeIn .35s ease}
+.result.show{display:block}
+.result-frame{width:100%;height:600px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;box-shadow:var(--shadow-sm)}
+
+.search-box{display:flex;gap:.55rem;margin-bottom:1.5rem}
+.search-box input{flex:1;background:var(--surface-alt);border:1.5px solid var(--border);border-radius:var(--radius);padding:.75rem 1rem;color:var(--text);font-size:.93rem;font-family:var(--font-body)}
+.search-box input:focus{outline:none;border-color:var(--accent-cta);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+
+.sub-list{display:flex;flex-direction:column;gap:.6rem}
+.sub-item{background:var(--surface-alt);border:1.5px solid var(--border-light);border-radius:var(--radius);padding:1rem 1.25rem;cursor:pointer;transition:all var(--transition)}
+.sub-item:hover{border-color:var(--accent);background:var(--accent-light);box-shadow:var(--shadow-sm)}
+.sub-item .sub-title{font-weight:600;font-size:.93rem;margin-bottom:.2rem}
+.sub-item .sub-meta{font-size:.78rem;color:var(--text-secondary);display:flex;gap:1rem;flex-wrap:wrap}
+.sub-item .sub-score{font-size:.75rem;color:var(--accent-cta);font-weight:600;font-family:monospace;background:rgba(37,99,235,.08);padding:.15rem .5rem;border-radius:4px}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1rem}
+.stat-card{background:var(--accent-light);border:1px solid transparent;border-radius:var(--radius);padding:1.5rem 1rem;text-align:center}
+.stat-value{font-family:var(--font-display);font-size:2.25rem;font-weight:700;color:var(--accent)}
+.stat-label{font-size:.78rem;color:var(--text-secondary);margin-top:.25rem;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.75rem 2rem;margin-bottom:1.5rem;box-shadow:var(--shadow-sm)}
+.card-title{font-family:var(--font-display);font-size:1.05rem;font-weight:600;margin-bottom:.75rem;color:var(--accent);display:flex;align-items:center;gap:.5rem}
+
+.disclaimer{background:var(--danger-bg);border:1px solid #fecaca;border-radius:var(--radius);padding:.75rem 1.25rem;margin-top:1.25rem;font-size:.78rem;color:var(--text-secondary);line-height:1.5}
+.disclaimer a{color:var(--accent-cta);text-decoration:underline;text-underline-offset:2px}
+
+footer{text-align:center;padding:2.5rem 0;color:var(--text-secondary);font-size:.8rem;border-top:1px solid var(--border-light);margin-top:3rem}
+footer .footer-logo{font-family:var(--font-display);font-size:1.1rem;font-weight:600;color:var(--accent);margin-bottom:.25rem}
+
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem 1.5rem;color:var(--text);font-size:.88rem;font-weight:500;z-index:100;animation:slideIn .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.1);max-width:380px}
+.toast.error{background:var(--danger);color:#fff;border-color:var(--danger)}
+.toast.success{background:var(--success);color:#fff;border-color:var(--success)}
+@keyframes slideIn{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.panel{display:none}
+.panel.active{display:block;animation:fadeIn .3s ease}
+
+@media(max-width:768px){.logo{font-size:2rem}.container{padding:1.25rem 1rem 3rem}.card{padding:1.25rem 1.25rem}}
+@media(max-width:480px){.logo{font-size:1.7rem}.chat-input-row{flex-direction:column}.stats-grid{grid-template-columns:1fr 1fr}.idea-box{min-height:220px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="bg-texture"></div>
+
+<div class="container">
+  <header>
+    <div class="logo">ipatent<span class="logo-accent">.me</span></div>
+    <p class="tagline">Have an invention idea? Tell us about it — we'll ask a few friendly questions and turn your answers into a professional disclosure document. No experience needed.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Main sections">
+    <button class="tab active" role="tab" aria-selected="true" data-panel="draft" id="tab-draft">My Idea</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="browse" id="tab-browse">Examples</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="search-panel" id="tab-search">Search</button>
+    <button class="tab" role="tab" aria-selected="false" data-panel="stats-panel" id="tab-stats">Stats</button>
+  </nav>
+
+  <!-- ═══════════════════════════
+       DRAFT PANEL
+       ═══════════════════════════ -->
+  <div class="panel active" id="panel-draft" role="tabpanel" aria-labelledby="tab-draft">
+
+    <div class="card" id="idea-card">
+      <div class="card-title">✨ Tell us about your invention — in your own words</div>
+      <textarea id="idea-text" class="idea-box" placeholder="Just start typing! There's no wrong way to do this. Tell us whatever comes to mind:
+
+What's your invention? What does it do?
+What problem does it solve? Why is it useful?
+How does it work? (Don't worry about being technical — explain it like you're telling a friend)
+How is it different from what's already out there?
+Who would use it?
+
+There are no rules here — share as much or as little as you like. We'll help you fill in the rest!"></textarea>
+      <p class="hint" id="char-hint">Type anything — ideas, notes, scribbles. It all helps!</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="start-btn" onclick="startDraft()">💬 Let's Talk About My Idea</button>
+      </div>
+      <div class="disclaimer" role="alert">
+        This tool creates a <strong>draft document</strong> to help you describe your invention. It does not file anything with the patent office or give you any legal rights. For official filing, talk to a patent professional. <a href="https://www.uspto.gov/patents/basics" target="_blank" rel="noopener">Learn more about patents →</a>
+      </div>
+    </div>
+
+    <!-- Chat dialog -->
+    <div id="chat-panel">
+      <div class="card">
+        <div class="card-title">💬 Let's explore your idea together</div>
+        <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Conversation about your invention"></div>
+        <div class="chat-input-row" id="chat-input-row">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Type your answer here…" onkeydown="if(event.key==='Enter')sendMessage()" aria-label="Your answer">
+          <button class="btn btn-primary" onclick="sendMessage()" id="chat-send-btn">Reply</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-sm" onclick="generateDisclosure()" id="generate-btn" disabled>📄 Create My Disclosure</button>
+        </div>
+      </div>
+
+      <div class="result" id="result">
+        <div class="card">
+          <div class="card-title">Your Disclosure Document</div>
+          <div class="btn-row" style="margin-bottom:.75rem">
+            <button class="btn btn-primary btn-sm" onclick="printResult()">🖨️ Print / Save as PDF</button>
+            <button class="btn btn-secondary btn-sm" onclick="downloadHTML()">💾 Download</button>
+          </div>
+          <iframe class="result-frame" id="result-frame" title="Your disclosure document preview"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════
+       BROWSE
+       ═══════════════════════════ -->
+  <div class="panel" id="panel-browse" role="tabpanel" aria-labelledby="tab-browse">
+    <div class="card">
+      <div class="card-title">📋 Recently Created Disclosures</div>
+      <div class="sub-list" id="recent-list">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════
+       SEARCH
+       ═══════════════════════════ -->
+  <div class="panel" id="panel-search-panel" role="tabpanel" aria-labelledby="tab-search">
+    <div class="card">
+      <div class="card-title">🔍 Find Similar Ideas</div>
+      <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:.75rem">Search through all disclosures to find related inventions.</p>
+      <div class="search-box">
+        <input type="text" id="search-query" placeholder="Describe an invention to find similar ideas…" onkeydown="if(event.key==='Enter')doSearch()" aria-label="Search disclosures">
+        <button class="btn btn-primary" onclick="doSearch()">Search</button>
+      </div>
+      <div class="sub-list" id="search-results">Type something above to search.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════
+       STATS
+       ═══════════════════════════ -->
+  <div class="panel" id="panel-stats-panel" role="tabpanel" aria-labelledby="tab-stats">
+    <div class="card">
+      <div class="card-title">📊 Platform Overview</div>
+      <div class="stats-grid" id="stats-cards">Loading…</div>
+      <div class="sub-list" id="stats-recent">Loading…</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-logo">ipatent.me</div>
+    <p style="margin-top:.25rem">Helping inventors protect their ideas</p>
+    <p style="margin-top:.5rem;font-size:.75rem">Not legal advice. Not affiliated with the USPTO. &copy; 2026</p>
+  </footer>
+</div>
+
+<script>
+const API = 'https://ipatent-api.q08.workers.dev/api';
+const SESSION = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36);
+let chatHistory = [];
+
+function toast(msg, type) {
+  const t = document.createElement('div'); t.className = 'toast ' + (type||'success');
+  t.textContent = msg; t.setAttribute('role','status'); t.setAttribute('aria-live','polite');
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(() => t.remove(), 300); }, 5000);
+}
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active'); tab.setAttribute('aria-selected','true');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    if (tab.dataset.panel === 'browse') loadRecent();
+    if (tab.dataset.panel === 'stats-panel') loadStats();
+  });
+});
+
+// Character hint
+document.getElementById('idea-text').addEventListener('input', function() {
+  const len = this.value.length;
+  const hints = [
+    'Type anything — ideas, notes, scribbles. It all helps!',
+    'Great start! Keep going — the more you share, the better.',
+    'You\'re on a roll! Tell us more about how it works.',
+    'Excellent detail! This will make a strong disclosure.',
+  ];
+  document.getElementById('char-hint').textContent = hints[Math.min(Math.floor(len/200), 3)];
+});
+
+// ── START DRAFTING ──
+async function startDraft() {
+  const text = document.getElementById('idea-text').value.trim();
+  if (!text) { toast('Tell us a little bit about your idea first! 😊', 'error'); return; }
+
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('start-btn').textContent = 'Thinking…';
+
+  chatHistory = [{ role: 'user', content: text }];
+  document.getElementById('chat-panel').classList.add('show');
+  document.getElementById('idea-card').style.opacity = '0.45';
+  document.getElementById('idea-card').style.pointerEvents = 'none';
+
+  addMessage('user', text);
+  addThinking();
+
+  try {
+    const r = await fetch(`${API}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory, session_id: SESSION })
+    });
+    if (!r.ok) throw new Error('Server error');
+    const d = await r.json();
+    removeThinking();
+    addMessage('system', d.content);
+    chatHistory.push({ role: 'assistant', content: d.content });
+    document.getElementById('generate-btn').disabled = false;
+  } catch (e) {
+    removeThinking();
+    addMessage('system', 'Hmm, I had a little trouble there. Could you try again? If this keeps happening, try describing your idea in a different way.');
+    document.getElementById('generate-btn').disabled = false;
+  } finally {
+    document.getElementById('start-btn').disabled = false;
+    document.getElementById('start-btn').textContent = '💬 Let\'s Talk About My Idea';
+  }
+}
+
+// ── SEND MESSAGE ──
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  document.getElementById('chat-send-btn').disabled = true;
+
+  addMessage('user', text);
+  chatHistory.push({ role: 'user', content: text });
+  addThinking();
+
+  try {
+    const r = await fetch(`${API}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory, session_id: SESSION })
+    });
+    if (!r.ok) throw new Error('Server error');
+    const d = await r.json();
+    removeThinking();
+    addMessage('system', d.content);
+    chatHistory.push({ role: 'assistant', content: d.content });
+  } catch (e) {
+    removeThinking();
+    addMessage('system', 'Sorry about that! Could you try again?');
+  } finally {
+    document.getElementById('chat-send-btn').disabled = false;
+  }
+}
+
+// ── GENERATE ──
+async function generateDisclosure() {
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = true; btn.textContent = 'Creating your document…';
+
+  const title = extractTitle(chatHistory);
+  const disclosureText = chatHistory.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
+
+  try {
+    const r = await fetch(`${API}/submit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title || 'My Invention', disclosure_text: disclosureText, session_id: SESSION })
+    });
+    if (!r.ok) throw new Error('Generation failed');
+    const html = await r.text();
+    document.getElementById('result-frame').srcdoc = html;
+    document.getElementById('result').classList.add('show');
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+    toast('Your disclosure is ready! 🎉');
+  } catch (e) {
+    toast('Something went wrong. Please try again.', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '📄 Create My Disclosure';
+  }
+}
+
+function extractTitle(history) {
+  const first = history.find(m => m.role === 'user');
+  if (first) {
+    const lines = first.content.split('\n').filter(l => l.trim());
+    const firstLine = lines[0].replace(/^#+\s*/, '').trim();
+    if (firstLine.length > 10 && firstLine.length < 200) return firstLine;
+  }
+  return 'My Invention';
+}
+
+// Chat UI
+function addMessage(role, content) {
+  const el = document.createElement('div');
+  el.className = 'chat-msg ' + role;
+  el.textContent = content;
+  document.getElementById('chat-messages').appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth' });
+}
+function addThinking() {
+  const el = document.createElement('div');
+  el.className = 'chat-msg thinking'; el.textContent = 'Thinking about your idea…'; el.id = 'thinking-msg';
+  document.getElementById('chat-messages').appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth' });
+}
+function removeThinking() { const el = document.getElementById('thinking-msg'); if (el) el.remove(); }
+
+function printResult() { const f = document.getElementById('result-frame'); if (f.contentWindow) f.contentWindow.print(); }
+function downloadHTML() {
+  const h = document.getElementById('result-frame').srcdoc || ''; if (!h) return;
+  const b = new Blob([h], { type: 'text/html' }), u = URL.createObjectURL(b), a = document.createElement('a');
+  a.href = u; a.download = 'my-invention-disclosure.html'; a.click(); URL.revokeObjectURL(u);
+}
+
+// Browse
+async function loadRecent() {
+  const el = document.getElementById('recent-list');
+  try {
+    const r = await fetch(`${API}/submissions?limit=20`); const d = await r.json();
+    if (!d.results || !d.results.length) { el.innerHTML = '<span style="color:var(--muted)">No disclosures yet — be the first!</span>'; return; }
+    el.innerHTML = d.results.map(s => `<div class="sub-item" onclick="viewSubmission('${s.submission_id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')viewSubmission('${s.submission_id}')"><div class="sub-title">${esc(s.title)}</div><div class="sub-meta"><span>${esc(s.inventor_name||'Anonymous')}</span><span>${s.created_at?s.created_at.slice(0,10):'—'}</span><span>${s.status}</span></div></div>`).join('');
+  } catch { el.innerHTML = '<span style="color:var(--danger)">Couldn\'t load. Try refreshing.</span>'; }
+}
+
+async function viewSubmission(id) {
+  try {
+    const r = await fetch(`${API}/submissions/${id}`);
+    if (!r.ok) { toast('Not found', 'error'); return; }
+    const html = await r.text();
+    document.getElementById('result-frame').srcdoc = html;
+    document.getElementById('result').classList.add('show');
+    document.getElementById('tab-draft').click();
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+  } catch { toast('Error loading', 'error'); }
+}
+
+// Search
+async function doSearch() {
+  const q = document.getElementById('search-query').value.trim(); if (!q) return;
+  const el = document.getElementById('search-results'); el.innerHTML = 'Searching…';
+  try {
+    const r = await fetch(`${API}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, limit: 20, session_id: SESSION }) });
+    const d = await r.json();
+    if (!d.results || !d.results.length) { el.innerHTML = '<span style="color:var(--muted)">No matches found. Try different words.</span>'; return; }
+    el.innerHTML = d.results.map(s => `<div class="sub-item" onclick="viewSubmission('${s.submission_id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')viewSubmission('${s.submission_id}')"><div class="sub-title">${esc(s.title)} <span class="sub-score">${(s.score*100).toFixed(0)}% match</span></div><div class="sub-meta"><span>${esc(s.inventor_name||'Anonymous')}</span></div></div>`).join('');
+  } catch { el.innerHTML = '<span style="color:var(--danger)">Search failed. Try again.</span>'; }
+}
+
+// Stats
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/stats`); const d = await r.json();
+    document.getElementById('stats-cards').innerHTML = `<div class="stat-card"><div class="stat-value">${d.submissions?.total||0}</div><div class="stat-label">Disclosures</div></div><div class="stat-card"><div class="stat-value">${d.analytics?.total||0}</div><div class="stat-label">Events</div></div><div class="stat-card"><div class="stat-value">${d.sessions?.total||0}</div><div class="stat-label">Sessions</div></div><div class="stat-card"><div class="stat-value">${(d.analytics?.by_country||[]).length}</div><div class="stat-label">Countries</div></div>`;
+    const recent = d.submissions?.recent || [];
+    document.getElementById('stats-recent').innerHTML = recent.length ? recent.map(s => `<div class="sub-item" onclick="viewSubmission('${s.submission_id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')viewSubmission('${s.submission_id}')"><div class="sub-title">${esc(s.title)}</div><div class="sub-meta"><span>${esc(s.inventor_name||'Anonymous')}</span><span>${s.status}</span></div></div>`).join('') : '<span style="color:var(--muted)">No submissions yet.</span>';
+  } catch {}
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Track page view
+fetch(`${API}/analytics`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_type: 'pageview', page_url: location.pathname, session_id: SESSION }), keepalive: true }).catch(()=>{});
+</script>
+</body>
+</html>
