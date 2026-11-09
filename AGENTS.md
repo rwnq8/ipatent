@@ -130,3 +130,10 @@ Each repo keeps a roadmap issue ("Roadmap: next 5 features") with at most 5 item
 - Copy wording and proof points from `rwnq8/resume` `docs/BRAND.md`. Add no
   credential, title, patent or count that is not in that file or `RESUME.md`;
   when unsure whether Rowan did something, ask by prompted recall (section 9; local copy of the procedure in `.agents/skills/prompted-recall/SKILL.md`).
+
+## Design standard (DESIGN-STANDARD-1, owner directive 2026-11-09)
+
+- Owner: "bad UI makes me sad ... when I see shitty design, it freezes me up ... Don't give me shitty design anywhere." Every page, dashboard, form, card or README layout an agent builds follows professional UI and UX practice.
+- Fleet web pages use the shared design system in `QNFO/qnfo-workers` `_shared/design-system.js` (tokens, components, `dsHead`, `dsLint`), inlined with `_shared/inline-design-system.mjs`; `_shared/design-system.test.mjs` proves WCAG 2.2 AA contrast in light and dark and lints each adopter's rendered page. A page outside the fleet copies its tokens (colours, 16 px body text, 44 px tap size, 8 px spacing scale).
+- The standard: one primary action per screen; a title, one status sentence, then the content; tap instead of type (Yes / No / Not sure as equal buttons, never free text for a choice); 44 px tap targets, 16 px body and field text, 14 px minimum for secondary text; secondary tools and links behind a disclosure, not crowded into the top bar; one accent colour, with colour only for good, warning and bad; loading, empty and error states each say what happens next; phone first, and tables scroll instead of crushing.
+- Before calling UI work done, look at it: take a phone-width screenshot (390 px) in light and dark and fix what a person would trip over.
