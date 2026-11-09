@@ -1,4 +1,11 @@
-# Run and deploy your AI Studio app
+# ipatent: LLM-assisted prior-art analysis
+
+> Part of the autonomous AI systems research of [Rowan Brad Quni-Gudzinas](https://rwnq8.github.io),
+> a systems researcher. This prototype asks how far an LLM can carry an expert workflow (prior-art search
+> and a patentability report) and where a person has to check its work. Reports are machine-generated
+> and are not legal advice.
+
+## Run and deploy your AI Studio app
 
 This contains everything you need to run your app locally.
 
