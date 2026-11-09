@@ -117,3 +117,16 @@ Each repo keeps a roadmap issue ("Roadmap: next 5 features") with at most 5 item
 - Act on each answer at once: a yes goes into the record that needs it (resume, brand doc `rwnq8/resume` `docs/BRAND.md`, profile, application) marked "confirmed by owner, <date>"; a no removes the claim; "Not sure" keeps it out. Record answers so the same question is never asked twice.
 - Before every job application, compare the posting's requirements with the resume and ask a prompted-recall question for each gap before tailoring.
 - Full procedure: `.agents/skills/prompted-recall/SKILL.md` in `rwnq8/agent-operating-system`.
+
+## 10. Describing the owner (BRAND-1, owner directive 2026-11-09)
+
+- Rowan Brad Quni-Gudzinas is a systems researcher studying autonomous AI
+  systems: how they behave, fail and can be audited and governed (adjacent to
+  AI safety). Describe Rowan that way in every README, profile, bio, citation
+  and outreach text.
+- Rowan directs and evaluates systems rather than writing code. Use
+  "systems researcher", never "software engineer", "developer", "coder" or
+  "programmer". Quantum computing is not a headline or identity.
+- Copy wording and proof points from `rwnq8/resume` `docs/BRAND.md`. Add no
+  credential, title, patent or count that is not in that file or `RESUME.md`;
+  when unsure whether Rowan did something, ask by prompted recall (section 9; local copy of the procedure in `.agents/skills/prompted-recall/SKILL.md`).
