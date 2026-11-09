@@ -116,7 +116,7 @@ Each repo keeps a roadmap issue ("Roadmap: next 5 features") with at most 5 item
 - Use tap cards, checkboxes or a short numbered batch. Ask whenever you are unsure instead of guessing or leaving a gap.
 - Act on each answer at once: a yes goes into the record that needs it (resume, brand doc `rwnq8/resume` `docs/BRAND.md`, profile, application) marked "confirmed by owner, <date>"; a no removes the claim; "Not sure" keeps it out. Record answers so the same question is never asked twice.
 - Before every job application, compare the posting's requirements with the resume and ask a prompted-recall question for each gap before tailoring.
-- Full procedure: `.agents/skills/prompted-recall/SKILL.md` in `rwnq8/agent-operating-system`.
+- Full procedure: `.agents/skills/prompted-recall/SKILL.md` in `QNFO/agent-operating-system`.
 
 ## 10. Describing the owner (BRAND-1, owner directive 2026-11-09)
 
